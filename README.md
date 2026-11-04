@@ -189,11 +189,27 @@ class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
 
 ## 测试
 
-插件不含独立测试目录，覆盖测试位于宿主项目：
+包内使用 PHPUnit + Orchestra Testbench，测试不依赖宿主项目：
 
 ```bash
-php artisan test --compact tests/Feature/ChatAssistantTest.php
+composer install
+composer test
 ```
+
+也可以直接运行：
+
+```bash
+vendor/bin/phpunit
+```
+
+覆盖范围：
+
+- 配置合并、默认值与中英文翻译
+- 插件渲染开关：登录状态、`enabled`、面板白名单
+- 组件：Agent 解析与切换、无效 Agent 过滤、会话隔离、消息裁剪、输入校验、流式回复、会话恢复
+- `ChatAssistantService`：历史消息传递、会话续接、异常兜底
+
+> Testbench 开发依赖要求 PHP 8.3+。
 
 ## 许可证
 

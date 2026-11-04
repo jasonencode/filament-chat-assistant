@@ -30,15 +30,23 @@
         "spatie/laravel-package-tools": "^1.15.0"
     },
     "require-dev": {
-        "laravel/pint": "^1.0"
+        "laravel/pint": "^1.0",
+        "orchestra/testbench": "^11.3",
+        "phpunit/phpunit": "^13.4"
     },
     "autoload": {
         "psr-4": {
             "Jason\\FilamentChatAssistant\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Jason\\FilamentChatAssistant\\Tests\\": "tests/"
+        }
+    },
     "scripts": {
-        "lint": "pint"
+        "lint": "pint",
+        "test": "@php vendor/phpunit/phpunit/phpunit"
     },
     "extra": {
         "laravel": {
