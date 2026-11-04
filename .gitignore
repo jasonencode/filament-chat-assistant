@@ -1,0 +1,17 @@
+**/.DS_Store
+.env
+.env.*
+!.env.example
+.idea
+.phpunit.result.cache
+.phpunit.cache
+.pint.cache
+.vscode
+*.log
+build
+composer.lock
+coverage
+docs
+phpunit.xml
+testbench.yaml
+vendor
