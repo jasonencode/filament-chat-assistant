@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In-field clear button
 - Database persistence through `laravel/ai`'s `RemembersConversations`; the dialog reads and deletes `agent_conversations` / `agent_conversation_messages` rows
 - `timeout` and `debug` configuration keys
-- English and Simplified Chinese documentation (`README.md` / `README.zh_CN.md`)
+- English and Simplified Chinese documentation (`README.md` / `README.en.md`)
 
 ### Changed
 
