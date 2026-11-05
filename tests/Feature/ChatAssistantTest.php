@@ -323,6 +323,27 @@ class ChatAssistantTest extends TestCase
             ->assertNotDispatched('chat-edit-message');
     }
 
+    public function test_agents_with_the_same_class_are_isolated_by_config_key(): void
+    {
+        config(['chat-assistant.agents' => [
+            'order_a' => TestAgent::class,
+            'order_b' => TestAgent::class,
+        ]]);
+
+        $component = Livewire::test(ChatAssistant::class)
+            ->call('toggle')
+            ->set('question', '你好')
+            ->call('sendMessage')
+            ->assertCount('messages', 1);
+
+        $component->call('selectAgent', 1)
+            ->assertCount('messages', 0);
+
+        $component->call('selectAgent', 0)
+            ->assertCount('messages', 1)
+            ->assertSet('messages.0.content', '你好');
+    }
+
     public function test_only_user_messages_have_an_edit_button(): void
     {
         $component = Livewire::test(ChatAssistant::class)

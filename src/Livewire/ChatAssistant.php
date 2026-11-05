@@ -34,6 +34,11 @@ class ChatAssistant extends Component
 
     public ?string $agentClass = null;
 
+    /**
+     * 当前 Agent 在配置里的键，用于区分同类的多个 Agent
+     */
+    public ?string $agentKey = null;
+
     public string $agentName = '';
 
     public ?string $agentAvatar = null;
@@ -85,7 +90,7 @@ class ChatAssistant extends Component
 
         $agent = $this->agents[$index];
 
-        if ($agent['class'] === $this->agentClass) {
+        if ($agent['key'] === $this->agentKey) {
             return;
         }
 
@@ -93,7 +98,7 @@ class ChatAssistant extends Component
 
         $this->applyAgent($agent);
 
-        session([$this->agentSessionKey() => $this->agentClass]);
+        session([$this->agentSessionKey() => $this->agentKey]);
 
         $this->messages = $this->loadMessages();
         $this->persistMessages();
@@ -103,6 +108,7 @@ class ChatAssistant extends Component
     {
         $this->messages = [];
         $this->question = '';
+        $this->hasError = false;
 
         session()->forget([
             $this->messageSessionKey(),
@@ -247,6 +253,10 @@ class ChatAssistant extends Component
         $last = $this->messages[array_key_last($this->messages)];
 
         if ($last['role'] !== 'user') {
+            return;
+        }
+
+        if (!$this->isConfiguredAgent($this->agentClass)) {
             return;
         }
 
@@ -401,6 +411,26 @@ class ChatAssistant extends Component
     }
 
     /**
+     * 校验 Agent 是否在当前面板的配置里（防止前端篡改 agentClass）
+     */
+    private function isConfiguredAgent(?string $agentClass): bool
+    {
+        if ($agentClass === null) {
+            return false;
+        }
+
+        $configured = config('chat-assistant.agents', []);
+
+        if (!is_array($configured)) {
+            return false;
+        }
+
+        $agents = PanelAgents::forPanel($configured, filament()->getCurrentPanel()?->getId());
+
+        return in_array($agentClass, array_values(array_filter($agents, 'is_string')), true);
+    }
+
+    /**
      * 解析配置中可用的 Agent 列表
      */
     private function resolveAgents(): void
@@ -464,7 +494,7 @@ class ChatAssistant extends Component
         $active = $this->agents[0] ?? null;
 
         foreach ($this->agents as $agent) {
-            if ($agent['class'] === $stored) {
+            if ($agent['key'] === $stored) {
                 $active = $agent;
 
                 break;
@@ -481,6 +511,7 @@ class ChatAssistant extends Component
      */
     private function applyAgent(array $agent): void
     {
+        $this->agentKey = $agent['key'];
         $this->agentClass = $agent['class'];
         $this->agentName = $agent['name'];
         $this->agentAvatar = $agent['avatar'];
@@ -525,11 +556,11 @@ class ChatAssistant extends Component
     }
 
     /**
-     * 按 Agent 隔离会话，避免切换 Agent 后串上下文
+     * 按 Agent 配置键隔离会话，避免切换 Agent 或同类多实例时串上下文
      */
     private function agentHash(): string
     {
-        return substr(md5($this->agentClass ?? 'default'), 0, 12);
+        return substr(md5($this->agentKey ?? $this->agentClass ?? 'default'), 0, 12);
     }
 
     /**

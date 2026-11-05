@@ -70,17 +70,13 @@ class ChatAssistantService
             return null;
         }
 
-        if (method_exists($agent, 'continueOrStart')) {
-            $agent = $agent->continueOrStart($conversationId, $user);
-        }
-
         try {
-            $stream = $agent->stream($prompt);
+            if (method_exists($agent, 'continueOrStart')) {
+                $agent = $agent->continueOrStart($conversationId, $user);
+            }
 
-            foreach ($stream as $event) {
-                if ($event instanceof TextDelta) {
-                    yield $event->delta;
-                }
+            foreach ($this->textDeltas($agent->stream($prompt)) as $delta) {
+                yield $delta;
             }
         } catch (Throwable $exception) {
             report($exception);
@@ -93,6 +89,21 @@ class ChatAssistantService
         return method_exists($agent, 'currentConversation')
             ? $agent->currentConversation()
             : null;
+    }
+
+    /**
+     * 从流式事件中提取文本增量
+     *
+     * @param  iterable<int, \Laravel\Ai\Streaming\Events\StreamEvent>  $events
+     * @return Generator<int, string>
+     */
+    private function textDeltas(iterable $events): Generator
+    {
+        foreach ($events as $event) {
+            if ($event instanceof TextDelta) {
+                yield $event->delta;
+            }
+        }
     }
 
     /**

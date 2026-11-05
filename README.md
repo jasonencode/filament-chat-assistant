@@ -1,46 +1,69 @@
 # Filament Chat Assistant
 
-给 Filament 面板挂一个右下角 AI 助手对话框的插件。插件只负责界面、会话隔离与流式输出；具体 Agent、工具和模型由宿主应用配置。
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/jason/filament-chat-assistant.svg?style=flat-square)](https://packagist.org/packages/jason/filament-chat-assistant)
+[![Tests](https://github.com/jasonencode/filament-chat-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/jasonencode/filament-chat-assistant/actions/workflows/tests.yml)
+[![PHP Version Require](https://img.shields.io/packagist/php-v/jason/filament-chat-assistant.svg?style=flat-square)](https://packagist.org/packages/jason/filament-chat-assistant)
+[![Total Downloads](https://img.shields.io/packagist/dt/jason/filament-chat-assistant.svg?style=flat-square)](https://packagist.org/packages/jason/filament-chat-assistant)
+[![License](https://img.shields.io/packagist/l/jason/filament-chat-assistant.svg?style=flat-square)](https://packagist.org/packages/jason/filament-chat-assistant)
+[![Filament](https://img.shields.io/badge/filament-5.x-orange.svg?style=flat-square)](https://filamentphp.com)
+[![Livewire](https://img.shields.io/badge/livewire-4.4%2B-pink.svg?style=flat-square)](https://livewire.laravel.com)
 
-## 功能
+**English** | [简体中文](README.zh_CN.md)
 
-- 右下角悬浮按钮与对话框，支持最大化 / 还原
-- 拖拽上边、左边、左上角调整尺寸，尺寸自动保存到 `localStorage`，可一键还原默认尺寸
-- 流式输出助手回复，带思考中动画；助手消息按 Markdown 渲染
-- 可配置多个 Agent，标题栏下拉切换，每个 Agent 拥有独立会话
-- 按「登录用户 + 租户 + Agent」隔离会话，切换租户或 Agent 不会串上下文
-- 「开始新会话」、面板白名单、暗色模式、移动端自适应
-- 内置简体中文与英文翻译
+An AI chat assistant dialog plugin for Filament panels. The package owns the UI, conversation isolation, streaming output and message actions; the agents, tools, models and optional persistence come from `laravel/ai` and the host application.
 
-## 环境要求
+## Features
+
+- Floating button and dialog in the bottom-right corner, with maximize / restore
+- Resize by dragging the top, left or top-left edge; the size is saved in `localStorage` and can be reset
+- Streaming replies rendered as Markdown; the thinking animation disappears after the first chunk while the avatar and name stay visible
+- Multiple agents switchable from the header, including per-panel agent sets
+- Conversations isolated by "authenticated user + tenant + agent config key"
+- Message actions: copy, edit (loads a user message back into the input), retract (with confirmation), regenerate (last reply only)
+- Message timestamps: `H:i` for today, `m-d H:i` for this year, `Y-m-d H:i` otherwise (Filament timezone)
+- Composer with an in-field clear button, Enter to send / Shift + Enter for a new line, and IME-safe handling
+- Status indicator: green when idle, pulsing amber while generating, red after a failed reply
+- Configurable closed-state icon (png / jpg path or full URL)
+- Friendly error messages; exception details only when debug is enabled, full stack traces are always logged
+- Optional database persistence: when an agent uses `RemembersConversations`, the package reuses `agent_conversations` / `agent_conversation_messages`
+- Dark mode, mobile-friendly layout, English and Simplified Chinese translations
+
+## Requirements
 
 - PHP 8.2+
 - Filament 5.x
 - Livewire 4.4+
 - `laravel/ai` 1.3+
 
-## 安装
+## Installation
 
 ```bash
 composer require jason/filament-chat-assistant
 ```
 
-发布配置文件：
+Publish the configuration file:
 
 ```bash
 php artisan vendor:publish --tag=filament-chat-assistant-config
 ```
 
-需要定制视图或语言包时，再按需发布：
+Optionally publish the views or translations:
 
 ```bash
 php artisan vendor:publish --tag=filament-chat-assistant-views
 php artisan vendor:publish --tag=filament-chat-assistant-translations
 ```
 
-## 注册插件
+If you want database-backed conversations, publish and run the `laravel/ai` conversation migrations following its documentation:
 
-在面板 Provider 中注册：
+```bash
+php artisan vendor:publish   # choose the laravel/ai migrations
+php artisan migrate
+```
+
+## Registering the plugin
+
+Register the plugin in your panel provider:
 
 ```php
 use Jason\FilamentChatAssistant\FilamentChatAssistantPlugin;
@@ -48,40 +71,45 @@ use Jason\FilamentChatAssistant\FilamentChatAssistantPlugin;
 ->plugin(FilamentChatAssistantPlugin::make())
 ```
 
-插件会：
+The plugin will:
 
-- 注册 Livewire 组件 `filament-chat-assistant`
-- 在面板 `BODY_END` 渲染对话框，且仅在用户已登录时渲染
-- 按「登录用户 + 租户」隔离会话
-- 配置多个 Agent 时，标题栏名称可点击切换；每个 Agent 拥有独立会话记录
-- 通过 `ChatAssistantService` 流式输出 Agent 回复
+- Register the `filament-chat-assistant` Livewire component
+- Render the dialog in the panel `BODY_END` hook, only for authenticated users
+- Render only when the current panel resolves at least one agent (panels without agents show no button at all)
+- Stream agent replies through `ChatAssistantService`
 
-## 配置
+## Configuration
 
-`config/chat-assistant.php` 默认内容：
+Full `config/chat-assistant.php` example:
 
 ```php
 return [
     'enabled' => env('FILAMENT_CHAT_ASSISTANT_ENABLED', true),
 
-    // 默认尺寸、全屏、新会话按钮
     'ui' => [
-        // 首次打开时的默认尺寸（像素），用户拖拽后的尺寸会保存在 localStorage
+        // Default size in pixels on first open; resized dimensions are stored in localStorage
         'width' => env('FILAMENT_CHAT_ASSISTANT_WIDTH', 600),
         'height' => env('FILAMENT_CHAT_ASSISTANT_HEIGHT', 800),
         'fullscreen' => env('FILAMENT_CHAT_ASSISTANT_FULLSCREEN', true),
         'new_conversation' => env('FILAMENT_CHAT_ASSISTANT_NEW_CONVERSATION', true),
+
+        // Closed-state icon: a public-relative path (images/assistant.png) or a full URL; empty = built-in icon
+        'toggle_icon' => env('FILAMENT_CHAT_ASSISTANT_TOGGLE_ICON'),
     ],
 
-    // 可配置多个 Agent，对话框中可切换；数组键用于区分各自的会话记录
-    // 每个 Agent 必须实现 ChatAssistantAgent，构造函数需接受 user / tenantId
-    // 数组键可省略，省略时直接使用类名
+    // PHP execution time limit for the streaming request (seconds), 0 = unlimited
+    'timeout' => (int) env('FILAMENT_CHAT_ASSISTANT_TIMEOUT', 300),
+
+    // Append the exception class and message to error bubbles; defaults to APP_DEBUG
+    'debug' => (bool) env('FILAMENT_CHAT_ASSISTANT_DEBUG', env('APP_DEBUG', false)),
+
+    // Flat form: shared by every panel
     'agents' => [
         'order' => App\Ai\Agents\OrderSearch::class,
-        'product' => App\Ai\Agents\ProductSearch::class,
+        'report' => App\Ai\Agents\OrderReport::class,
     ],
 
-    // 按面板区分 Agent：键为面板 ID，'*' 兜底未列出的面板
+    // Per-panel form: keys are panel IDs, '*' is the fallback for unlisted panels
     // 'agents' => [
     //     'backend' => ['order' => App\Ai\Agents\OrderSearch::class],
     //     'tenant' => ['product' => App\Ai\Agents\ProductSearch::class],
@@ -90,34 +118,41 @@ return [
 ];
 ```
 
-`agents` 支持两种写法：
+### Agent configuration
 
-- **平铺**：所有面板共用同一组 Agent
-- **按面板分组**：键为面板 ID（`backend` / `tenant` 等），当前面板取对应的那组；未列出的面板使用 `'*'` 兜底，没有 `'*'` 则该面板不渲染对话框
+`agents` supports two shapes:
 
-插件只在「当前面板解析出至少一个 Agent」时挂载，因此不需要额外的面板白名单配置。
+- **Flat**: every panel shares the same agent set
+- **Per-panel**: keys are panel IDs (`backend`, `tenant`, ...); the current panel uses its group, falls back to `'*'`, and renders no dialog when neither exists
 
-发布后的配置文件会与包内默认值合并，只需保留要覆盖的键即可。
+Array keys identify conversations: **two different keys pointing at the same agent class still get independent conversations**.
 
-支持的环境变量：
+The plugin only mounts when the current panel resolves at least one agent, so no separate panel whitelist is needed.
 
-| 变量 | 默认值 | 说明 |
+### Environment variables
+
+| Variable | Default | Description |
 | --- | --- | --- |
-| `FILAMENT_CHAT_ASSISTANT_ENABLED` | `true` | 是否启用插件 |
-| `FILAMENT_CHAT_ASSISTANT_WIDTH` | `600` | 默认宽度（像素） |
-| `FILAMENT_CHAT_ASSISTANT_HEIGHT` | `800` | 默认高度（像素） |
-| `FILAMENT_CHAT_ASSISTANT_FULLSCREEN` | `true` | 是否允许最大化 |
-| `FILAMENT_CHAT_ASSISTANT_NEW_CONVERSATION` | `true` | 是否显示「开始新会话」按钮 |
+| `FILAMENT_CHAT_ASSISTANT_ENABLED` | `true` | Enable or disable the plugin |
+| `FILAMENT_CHAT_ASSISTANT_WIDTH` | `600` | Default width in pixels |
+| `FILAMENT_CHAT_ASSISTANT_HEIGHT` | `800` | Default height in pixels |
+| `FILAMENT_CHAT_ASSISTANT_FULLSCREEN` | `true` | Allow maximizing |
+| `FILAMENT_CHAT_ASSISTANT_NEW_CONVERSATION` | `true` | Show the "new conversation" button |
+| `FILAMENT_CHAT_ASSISTANT_TOGGLE_ICON` | empty | Closed-state icon path or URL |
+| `FILAMENT_CHAT_ASSISTANT_TIMEOUT` | `300` | Streaming request time limit in seconds, `0` = unlimited |
+| `FILAMENT_CHAT_ASSISTANT_DEBUG` | follows `APP_DEBUG` | Show exception details in error bubbles |
 
-### 错误提示
+Published configuration is merged with the package defaults, so you only need to keep the keys you override.
 
-AI 调用失败时，对话框里始终只显示「AI 服务暂时不可用，请稍后再试。」；异常类名与 message 仅在
-`chat-assistant.debug`（默认跟随 `APP_DEBUG`）开启时以引用块附在气泡里。生产环境保持
-`APP_DEBUG=false` 即可，用户看不到任何异常细节；完整堆栈仍会通过 `report()` 写入日志。
+### Error handling
 
-## 编写 Agent
+When an AI call fails, the dialog always shows "The AI service is temporarily unavailable. Please try again later." The exception class and message are appended as a quote block only when `chat-assistant.debug` (defaults to `APP_DEBUG`) is enabled. Keep `APP_DEBUG=false` in production to hide all exception details; the full stack trace is still written to the logs through `report()`.
 
-Agent 需实现 `Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent`，该接口继承自 Laravel AI 的 `Agent`，并额外要求提供名称和头像：
+Before streaming, the package calls `set_time_limit(config('chat-assistant.timeout'))` to avoid the default 30-second PHP limit producing an uncatchable `FatalError`. If `set_time_limit` is disabled via `disable_functions`, adjust `max_execution_time` in php.ini / PHP-FPM instead.
+
+## Writing an agent
+
+An agent must implement `Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent`, which extends Laravel AI's `Agent` and additionally requires a name and avatar:
 
 ```php
 use App\Models\System\Administrator;
@@ -138,17 +173,17 @@ class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
 
     public function name(): string
     {
-        return '订单查询助手';
+        return 'Order assistant';
     }
 
     public function avatar(): ?string
     {
-        return asset('images/avatar.png'); // 返回 null 时使用名称首字占位
+        return asset('images/avatar.png'); // null falls back to the first character of the name
     }
 
     public function instructions(): string
     {
-        return '你是订单查询助手……';
+        return 'You are an order assistant...';
     }
 
     public function messages(): iterable
@@ -165,21 +200,21 @@ class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
 }
 ```
 
-构造函数可注入以下参数：
+Constructor arguments:
 
-| 参数 | 说明 |
+| Argument | Description |
 | --- | --- |
-| `$user` | Filament 当前登录用户 |
-| `$tenantId` | 当前面板租户 ID；平台面板为 `null` |
-| `$history` | 历史消息（`Laravel\Ai\Messages\Message[]`），仅在回复请求时注入 |
+| `$user` | The authenticated Filament user |
+| `$tenantId` | Current panel tenant ID; `null` on the platform panel |
+| `$history` | Previous messages (`Laravel\Ai\Messages\Message[]`), injected only when conversations are not database-backed |
 
-> `$history` 必须提供默认值（如 `= []`）。渲染界面时容器只会注入 `user` 与 `tenantId`，缺少默认值会导致该 Agent 在列表中加载失败并被跳过。
+> `$history` must have a default value (e.g. `= []`). When rendering the UI the container only injects `user` and `tenantId`; a required parameter makes the agent fail to construct and be skipped.
 
-`instructions()`、`tools()`、`messages()` 等能力由 `laravel/ai` 契约决定，按业务需要组合实现；修改指令或工具时不会影响插件本身。
+`instructions()`, `tools()`, `messages()` and the rest come from the `laravel/ai` contracts; combine them as needed. Changing instructions or tools never affects the plugin itself.
 
-### 持久化会话（可选）
+### Database persistence (optional)
 
-如果希望对话记录落库，让 Agent 使用 `laravel/ai` 的 `RemembersConversations`（trait + 接口）：
+To store conversations in the database, let the agent use `laravel/ai`'s `RemembersConversations` (trait + interface):
 
 ```php
 use Laravel\Ai\Concerns\RemembersConversations as RemembersConversationsTrait;
@@ -189,52 +224,94 @@ class OrderSearch implements ChatAssistantAgent, RemembersConversations, HasTool
 {
     use Promptable;
     use RemembersConversationsTrait;
+
+    public function __construct(
+        public ?int $tenantId = null,
+        public ?Administrator $user = null,
+    ) {}
 }
 ```
 
-启用后：
+With persistence enabled:
 
-- 消息由 AI SDK 自动写入 `agent_conversations` / `agent_conversation_messages`
-- 插件在有会话 ID 时直接读这两张表渲染对话框；「撤回」「重新生成」会删除对应的数据库行
-- 「开始新会话」只是切换新的会话 ID，旧会话仍保留在数据库中
-- **不要在 Agent 里再自定义 `messages()`**，否则会覆盖 trait 从数据库读取历史的实现
-- 建议关闭自动生成标题（本仓库 `config/ai.php` 已设置 `ai.conversations.generate_title = false`），避免新会话额外请求一次模型
+- The AI SDK writes messages to `agent_conversations` / `agent_conversation_messages`
+- When a conversation ID exists, the dialog reads those tables directly; "retract" and "regenerate" delete the corresponding rows so the AI context loses them too
+- "New conversation" only switches to a new conversation ID; previous conversations stay in the database
+- **Do not define `messages()` on the agent**, it would override the trait's database-backed implementation
+- Disable automatic title generation (this repository sets `ai.conversations.generate_title = false` in `config/ai.php`) to avoid an extra model call per new conversation
 
-未使用该能力时，插件仍走 session + 构造函数传入的 `$history`，行为不变。
+Without this trait the plugin keeps using the session plus the `$history` injected into the constructor.
 
-## 使用说明
+## UI interactions
 
-- 未启用 `RemembersConversations` 的 Agent：消息保存在 session 中，浏览器会话结束时失效；启用后由 AI SDK 写入数据库
-- session 键按「用户 + 租户 + Agent」区分，包含当前 Agent、消息、会话 ID 和展开状态
-- 消息最多保留最近 50 条，单条输入上限 2000 字符
-- Enter 发送，Shift + Enter 换行；输入法组合输入期间不会误发送
-- 窗口尺寸与最大化状态保存在 `localStorage`（`tk-assistant-width`、`tk-assistant-height`、`tk-assistant-maximized`）
-- 屏幕宽度 ≤ 640px 时对话框自动铺满，拖拽调整禁用
+### Message actions
 
-## 测试
+Every message has action buttons below the bubble:
 
-包内使用 PHPUnit + Orchestra Testbench，测试不依赖宿主项目：
+| Action | Availability | Behaviour |
+| --- | --- | --- |
+| Copy | All messages | Copies the raw text (Markdown source for assistant messages); briefly shows "Copied" |
+| Edit | User messages | Loads the content back into the input and focuses it; sending appends a new message |
+| Retract | All messages | Confirms, then deletes it; with persistence enabled the database row is removed too |
+| Regenerate | Last assistant message | Deletes that reply and requests a new one using the preceding user message |
+
+Edit, retract and regenerate are ignored while a reply is in progress (`replying`).
+
+### Time and status
+
+- Timestamps follow the Filament timezone; hovering reveals the full `Y-m-d H:i:s`
+- Header status dot: green = idle, pulsing amber = generating, red = last reply failed; the state lives in the component and resets on page reload
+
+### Composer
+
+- The clear and send buttons sit inside the input field
+- Enter sends, Shift + Enter adds a new line, IME composition is respected
+- Input is limited to 2000 characters; the dialog keeps the latest 50 messages
+
+### Window
+
+- Drag the top, left or top-left edge to resize; `localStorage` stores `tk-assistant-width`, `tk-assistant-height` and `tk-assistant-maximized`
+- At 640px wide or less the dialog goes fullscreen and resizing is disabled
+
+## Data and isolation
+
+| Agent type | Message storage | Conversation ID |
+| --- | --- | --- |
+| Plain `Conversational` | Session (`filament-chat-assistant.messages.*`) | Session |
+| `RemembersConversations` | Database (`agent_conversation_messages`) | Session stores only the conversation ID |
+
+- Isolation is by authenticated user + tenant (`platform` for the platform panel) + agent config key
+- With persistence enabled the session still keeps a UI cache of up to 50 messages for agent switching and unreplied messages
+- Session keys include the agent config key; changing the key starts a fresh local conversation
+
+## Known limitations
+
+- With persistence enabled, the SDK writes the user message when the whole turn completes, so after a reload the user bubble shows the completion time rather than the send time
+- "New conversation" does not delete previous database conversations; there is no conversation list or cleanup command yet
+- Without `RemembersConversations`, messages live only in the session and disappear when the browser session ends
+- Tool-only turns without text output may render an empty assistant bubble in database mode
+- Only `zh_CN` and `en` translations are bundled; other locales fall back to the host application's fallback locale
+- The `agents` grouping heuristic treats any array value as a group; do not put arrays in a flat configuration
+
+## Testing
+
+The package uses PHPUnit and Orchestra Testbench; tests do not depend on the host application:
 
 ```bash
 composer install
-composer test
-```
-
-也可以直接运行：
-
-```bash
 vendor/bin/phpunit
 ```
 
-覆盖范围：
+Coverage includes:
 
-- 配置合并、默认值与中英文翻译
-- 插件渲染开关：登录状态、`enabled`、面板白名单
-- 组件：Agent 解析与切换、无效 Agent 过滤、会话隔离、消息裁剪、输入校验、流式回复、会话恢复
-- `ChatAssistantService`：历史消息传递、会话续接、异常兜底
+- Configuration merging, defaults and translations
+- Plugin render conditions: authentication, `enabled`, per-panel / `*` agent resolution
+- Component: agent resolution and switching, same-class multi-instance isolation, invalid agent filtering, message trimming, input validation, streaming replies, copy / edit / retract / regenerate, clearing the input, timestamps and status rendering
+- Persistence: `RememberedConversation` reads and deletes
+- `ChatAssistantService`: history passing, conversation continuation, error fallback, debug detail toggle
 
-> Testbench 开发依赖要求 PHP 8.3+。
+> Testbench development dependencies require PHP 8.3+.
 
-## 许可证
+## License
 
-MIT，详见 [LICENSE.md](LICENSE.md)。
+MIT. See [LICENSE.md](LICENSE.md).
