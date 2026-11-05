@@ -4,7 +4,6 @@ namespace Jason\FilamentChatAssistant\Services;
 
 use Generator;
 use Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent;
-use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Throwable;
 
@@ -48,21 +47,7 @@ class ChatAssistantService
 
         $prompt = (string) ($messages[array_key_last($messages)]['content'] ?? '');
 
-        $history = [];
-
-        foreach (array_slice($messages, 0, -1) as $message) {
-            if (!isset($message['role'], $message['content'])) {
-                continue;
-            }
-
-            if (!in_array($message['role'], ['user', 'assistant'], true)) {
-                continue;
-            }
-
-            $history[] = new Message($message['role'], (string) $message['content']);
-        }
-
-        $agent = $this->resolveAgent($agentClass, $user, $tenantId, $history);
+        $agent = $this->resolveAgent($agentClass, $user, $tenantId);
 
         if ($agent === null) {
             yield __('filament-chat-assistant::chat-assistant.agent_unavailable');
@@ -122,14 +107,10 @@ class ChatAssistantService
         return $message;
     }
 
-    /**
-     * @param  array<int, Message>  $history
-     */
     protected function resolveAgent(
         ?string $agentClass,
         object $user,
         ?int $tenantId,
-        array $history = [],
     ): ?ChatAssistantAgent {
         if (!is_string($agentClass) || !class_exists($agentClass)) {
             return null;
@@ -140,7 +121,6 @@ class ChatAssistantService
         }
 
         $agent = app($agentClass, [
-            'history' => $history,
             'user' => $user,
             'tenantId' => $tenantId,
         ]);

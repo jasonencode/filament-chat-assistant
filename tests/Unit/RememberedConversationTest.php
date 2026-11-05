@@ -2,8 +2,6 @@
 
 namespace Jason\FilamentChatAssistant\Tests\Unit;
 
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Jason\FilamentChatAssistant\Support\RememberedConversation;
 use Jason\FilamentChatAssistant\Tests\Fixtures\RememberedAgent;
@@ -13,44 +11,11 @@ use Laravel\Ai\Models\ConversationMessage;
 
 class RememberedConversationTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => ':memory:',
-        ]);
-
-        Schema::create('agent_conversations', function (Blueprint $table): void {
-            $table->string('id', 36)->primary();
-            $table->string('participant_type')->nullable();
-            $table->unsignedBigInteger('participant_id')->nullable();
-            $table->string('title');
-            $table->timestamps();
-        });
-
-        Schema::create('agent_conversation_messages', function (Blueprint $table): void {
-            $table->string('id', 36)->primary();
-            $table->string('conversation_id', 36)->index();
-            $table->string('participant_type')->nullable();
-            $table->unsignedBigInteger('participant_id')->nullable();
-            $table->string('agent');
-            $table->string('role', 25);
-            $table->text('content')->nullable();
-            $table->text('attachments')->nullable();
-            $table->longText('steps')->nullable();
-            $table->text('usage')->nullable();
-            $table->text('meta')->nullable();
-            $table->string('status', 25);
-            $table->timestamps();
-        });
-    }
-
     public function test_it_detects_agents_that_remember_conversations(): void
     {
         $this->assertTrue(RememberedConversation::supports(RememberedAgent::class));
-        $this->assertFalse(RememberedConversation::supports(TestAgent::class));
+        $this->assertTrue(RememberedConversation::supports(TestAgent::class));
+        $this->assertFalse(RememberedConversation::supports(\stdClass::class));
         $this->assertFalse(RememberedConversation::supports(null));
     }
 

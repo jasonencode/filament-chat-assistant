@@ -25,7 +25,7 @@
 - 状态指示器：就绪为绿色、生成中为琥珀色呼吸、上次失败为红色
 - 关闭态悬浮图标可配置为 png / jpg 图片或完整 URL
 - 错误友好提示；异常详情仅在 debug 开启时显示，完整堆栈始终写入日志
-- 会话可落库：Agent 使用 `RemembersConversations` 时复用 `agent_conversations` / `agent_conversation_messages`
+- 会话持久化：通过 `RemembersConversations` 复用 `agent_conversations` / `agent_conversation_messages`
 - 暗色模式、移动端自适应、简体中文与英文翻译
 
 ## 环境要求
@@ -54,7 +54,7 @@ php artisan vendor:publish --tag=filament-chat-assistant-views
 php artisan vendor:publish --tag=filament-chat-assistant-translations
 ```
 
-如果打算使用「会话落库」，还需要按 `laravel/ai` 文档发布会话表迁移并执行：
+需要按 `laravel/ai` 文档发布会话表迁移并执行（会话历史保存在数据库）：
 
 ```bash
 php artisan vendor:publish   # 选择 laravel/ai 的 migrations
@@ -152,21 +152,21 @@ AI 调用失败时，对话框里始终只显示「AI 服务暂时不可用，�
 
 ## 编写 Agent
 
-Agent 需实现 `Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent`，该接口继承自 Laravel AI 的 `Agent`，并额外要求提供名称和头像：
+Agent 需实现 `Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent`。该接口同时继承 Laravel AI 的 `Agent` 与 `RemembersConversations`，因此 **必须使用 `RemembersConversations` trait**（会话历史由 AI SDK 的会话表持久化），并额外提供名称和头像：
 
 ```php
 use App\Models\System\Administrator;
 use Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent;
-use Laravel\Ai\Contracts\Conversational;
+use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Promptable;
 
-class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
+class OrderSearch implements ChatAssistantAgent, HasTools
 {
     use Promptable;
+    use RemembersConversations;
 
     public function __construct(
-        public iterable $history = [],
         public ?int $tenantId = null,
         public ?Administrator $user = null,
     ) {}
@@ -186,11 +186,6 @@ class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
         return '你是订单查询助手……';
     }
 
-    public function messages(): iterable
-    {
-        return is_array($this->history) ? $this->history : iterator_to_array($this->history);
-    }
-
     public function tools(): iterable
     {
         return [
@@ -206,41 +201,17 @@ class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
 | --- | --- |
 | `$user` | Filament 当前登录用户 |
 | `$tenantId` | 当前面板租户 ID；平台面板为 `null` |
-| `$history` | 历史消息（`Laravel\Ai\Messages\Message[]`），仅在未启用会话落库时注入 |
 
-> `$history` 必须提供默认值（如 `= []`）。渲染界面时容器只会注入 `user` 与 `tenantId`，缺少默认值会导致该 Agent 在列表中加载失败并被跳过。
+`instructions()`、`tools()` 等能力由 `laravel/ai` 契约决定，按业务需要组合实现。
 
-`instructions()`、`tools()`、`messages()` 等能力由 `laravel/ai` 契约决定，按业务需要组合实现；修改指令或工具时不会影响插件本身。
-
-### 会话落库（可选）
-
-希望对话记录落库时，让 Agent 使用 `laravel/ai` 的 `RemembersConversations`（trait + 接口）：
-
-```php
-use Laravel\Ai\Concerns\RemembersConversations as RemembersConversationsTrait;
-use Laravel\Ai\Contracts\RemembersConversations;
-
-class OrderSearch implements ChatAssistantAgent, RemembersConversations, HasTools
-{
-    use Promptable;
-    use RemembersConversationsTrait;
-
-    public function __construct(
-        public ?int $tenantId = null,
-        public ?Administrator $user = null,
-    ) {}
-}
-```
-
-启用后：
+### 会话存储（必须）
 
 - 消息由 AI SDK 自动写入 `agent_conversations` / `agent_conversation_messages`
 - 插件在有会话 ID 时直接读这两张表渲染对话框；「撤回」「重新生成」会删除对应的数据库行，AI 后续上下文同步移除
 - 「开始新会话」只是切换新的会话 ID，旧会话仍保留在数据库中
-- **不要在 Agent 里再自定义 `messages()`**，否则会覆盖 trait 从数据库读取历史的实现
+- **不要在 Agent 里自定义 `messages()`**，否则会覆盖 trait 从数据库读取历史的实现
 - 建议关闭自动生成标题（本仓库 `config/ai.php` 已设置 `ai.conversations.generate_title = false`），避免新会话额外请求一次模型
-
-未使用该能力时，插件仍走 session + 构造函数传入的 `$history`，行为不变。
+- 会话历史完全由 AI SDK 维护，插件不再向 Agent 注入 `$history`
 
 ## 界面交互
 
@@ -252,7 +223,7 @@ class OrderSearch implements ChatAssistantAgent, RemembersConversations, HasTool
 | --- | --- | --- |
 | 复制 | 所有消息 | 复制原始文本（助手消息为 Markdown 源文本），成功后短暂显示「已复制」 |
 | 编辑 | 用户消息 | 把内容回填到输入框并聚焦，发送后作为新消息追加 |
-| 撤回 | 所有消息 | 二次确认后删除；落库模式下同时删除数据库行 |
+| 撤回 | 所有消息 | 二次确认后删除，同时删除数据库中的消息行 |
 | 重新生成 | 最后一条助手消息 | 删除该回复，用上一条用户消息重新请求 |
 
 生成中（`replying`）会忽略编辑、撤回与重新生成。
@@ -275,21 +246,19 @@ class OrderSearch implements ChatAssistantAgent, RemembersConversations, HasTool
 
 ## 数据与隔离
 
-| Agent 类型 | 消息存储 | 会话 ID |
-| --- | --- | --- |
-| 普通 `Conversational` | session（`filament-chat-assistant.messages.*`） | session |
-| `RemembersConversations` | 数据库（`agent_conversation_messages`） | session 中只存会话 ID |
+| 存储 | 说明 |
+| --- | --- |
+| 数据库（`agent_conversation_messages`） | 消息正文，由 AI SDK 写入 |
+| session | 只存会话 ID + 最多 50 条 UI 缓存（未回复的消息、切换 Agent 时即时展示） |
 
 - 隔离维度：登录用户 + 租户（平台面板为 `platform`）+ Agent 配置键
-- 落库模式下 session 仍保留一份最多 50 条的 UI 缓存，用于切换 Agent / 尚未回复的消息
 - session 键会随 Agent 配置键变化；修改配置键会开启一段新的本地会话
 
 ## 已知限制
 
-- 落库模式下，用户消息在整轮回复完成时才由 SDK 写库，因此刷新后用户气泡的时间是完成时刻，不是发送时刻
+- 用户消息在整轮回复完成时才由 SDK 写库，因此刷新后用户气泡的时间是完成时刻，不是发送时刻
 - 「开始新会话」不会删除旧会话记录；目前没有会话列表 / 清理入口，需要时自行加命令或管理页
-- 未启用 `RemembersConversations` 时消息只存在 session，浏览器会话结束即失效
-- 纯工具调用、没有文本输出的回合在落库模式下可能出现空的助手气泡
+- 纯工具调用、没有文本输出的回合可能出现空的助手气泡
 - 包内只提供 `zh_CN` 与 `en` 翻译；`zh_TW` 等语言会回退到宿主应用的 fallback locale
 - `agents` 分组判定规则是「存在数组值即视为分组」；平铺配置中不要放数组值
 
@@ -308,7 +277,7 @@ vendor/bin/phpunit
 - 插件渲染开关：登录状态、`enabled`、按面板 / `*` 解析 Agent
 - 组件：Agent 解析与切换、同类多实例隔离、无效 Agent 过滤、消息裁剪、输入校验、流式回复、复制 / 编辑 / 撤回 / 重新生成、清空输入、时间与状态渲染
 - 会话落库：`RememberedConversation` 的读取与删除
-- `ChatAssistantService`：历史消息传递、会话续接、异常兜底、异常详情开关
+- `ChatAssistantService`：用户 / 租户注入、会话续接、异常兜底、异常详情开关
 
 > Testbench 开发依赖要求 PHP 8.3+。
 

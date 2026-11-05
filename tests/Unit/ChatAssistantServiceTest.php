@@ -57,23 +57,17 @@ class ChatAssistantServiceTest extends TestCase
         );
 
         $this->assertSame('回复内容', implode('', iterator_to_array($stream)));
-        $this->assertNull($stream->getReturn());
+        $this->assertIsString($stream->getReturn());
     }
 
-    public function test_it_passes_previous_messages_as_history(): void
+    public function test_it_injects_the_user_and_tenant_into_the_agent(): void
     {
         TestAgent::fake(['好的']);
 
         $user = $this->makeUser();
 
         $stream = $this->service()->stream(
-            messages: [
-                ['role' => 'user', 'content' => '第一问'],
-                ['role' => 'assistant', 'content' => '第一答'],
-                ['role' => 'system', 'content' => '忽略我'],
-                ['content' => '缺少角色'],
-                ['role' => 'user', 'content' => '第二问'],
-            ],
+            messages: [['role' => 'user', 'content' => '你好']],
             user: $user,
             tenantId: 9,
             agentClass: TestAgent::class,
@@ -83,11 +77,6 @@ class ChatAssistantServiceTest extends TestCase
 
         $agent = TestAgent::$instances[array_key_last(TestAgent::$instances)];
 
-        $this->assertCount(2, $agent->history);
-        $this->assertSame('user', $agent->history[0]->role->value);
-        $this->assertSame('第一问', $agent->history[0]->content);
-        $this->assertSame('assistant', $agent->history[1]->role->value);
-        $this->assertSame('第一答', $agent->history[1]->content);
         $this->assertSame(9, $agent->tenantId);
         $this->assertSame($user, $agent->user);
     }

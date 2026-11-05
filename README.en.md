@@ -25,7 +25,7 @@ An AI chat assistant dialog plugin for Filament panels. The package owns the UI,
 - Status indicator: green when idle, pulsing amber while generating, red after a failed reply
 - Configurable closed-state icon (png / jpg path or full URL)
 - Friendly error messages; exception details only when debug is enabled, full stack traces are always logged
-- Optional database persistence: when an agent uses `RemembersConversations`, the package reuses `agent_conversations` / `agent_conversation_messages`
+- Conversation persistence: `RemembersConversations` reuses `agent_conversations` / `agent_conversation_messages`
 - Dark mode, mobile-friendly layout, English and Simplified Chinese translations
 
 ## Requirements
@@ -54,7 +54,7 @@ php artisan vendor:publish --tag=filament-chat-assistant-views
 php artisan vendor:publish --tag=filament-chat-assistant-translations
 ```
 
-If you want database-backed conversations, publish and run the `laravel/ai` conversation migrations following its documentation:
+Publish and run the `laravel/ai` conversation migrations following its documentation (conversation history is stored in the database):
 
 ```bash
 php artisan vendor:publish   # choose the laravel/ai migrations
@@ -152,21 +152,21 @@ Before streaming, the package calls `set_time_limit(config('chat-assistant.timeo
 
 ## Writing an agent
 
-An agent must implement `Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent`, which extends Laravel AI's `Agent` and additionally requires a name and avatar:
+An agent must implement `Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent`. The contract extends both Laravel AI's `Agent` and `RemembersConversations`, so **the `RemembersConversations` trait is required** (conversation history is persisted by the AI SDK). The agent also provides a name and avatar:
 
 ```php
 use App\Models\System\Administrator;
 use Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent;
-use Laravel\Ai\Contracts\Conversational;
+use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Promptable;
 
-class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
+class OrderSearch implements ChatAssistantAgent, HasTools
 {
     use Promptable;
+    use RemembersConversations;
 
     public function __construct(
-        public iterable $history = [],
         public ?int $tenantId = null,
         public ?Administrator $user = null,
     ) {}
@@ -186,11 +186,6 @@ class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
         return 'You are an order assistant...';
     }
 
-    public function messages(): iterable
-    {
-        return is_array($this->history) ? $this->history : iterator_to_array($this->history);
-    }
-
     public function tools(): iterable
     {
         return [
@@ -206,41 +201,17 @@ Constructor arguments:
 | --- | --- |
 | `$user` | The authenticated Filament user |
 | `$tenantId` | Current panel tenant ID; `null` on the platform panel |
-| `$history` | Previous messages (`Laravel\Ai\Messages\Message[]`), injected only when conversations are not database-backed |
 
-> `$history` must have a default value (e.g. `= []`). When rendering the UI the container only injects `user` and `tenantId`; a required parameter makes the agent fail to construct and be skipped.
+`instructions()`, `tools()` and the rest come from the `laravel/ai` contracts; combine them as needed.
 
-`instructions()`, `tools()`, `messages()` and the rest come from the `laravel/ai` contracts; combine them as needed. Changing instructions or tools never affects the plugin itself.
-
-### Database persistence (optional)
-
-To store conversations in the database, let the agent use `laravel/ai`'s `RemembersConversations` (trait + interface):
-
-```php
-use Laravel\Ai\Concerns\RemembersConversations as RemembersConversationsTrait;
-use Laravel\Ai\Contracts\RemembersConversations;
-
-class OrderSearch implements ChatAssistantAgent, RemembersConversations, HasTools
-{
-    use Promptable;
-    use RemembersConversationsTrait;
-
-    public function __construct(
-        public ?int $tenantId = null,
-        public ?Administrator $user = null,
-    ) {}
-}
-```
-
-With persistence enabled:
+### Conversation storage (required)
 
 - The AI SDK writes messages to `agent_conversations` / `agent_conversation_messages`
 - When a conversation ID exists, the dialog reads those tables directly; "retract" and "regenerate" delete the corresponding rows so the AI context loses them too
 - "New conversation" only switches to a new conversation ID; previous conversations stay in the database
 - **Do not define `messages()` on the agent**, it would override the trait's database-backed implementation
 - Disable automatic title generation (this repository sets `ai.conversations.generate_title = false` in `config/ai.php`) to avoid an extra model call per new conversation
-
-Without this trait the plugin keeps using the session plus the `$history` injected into the constructor.
+- Conversation history is entirely managed by the AI SDK; the plugin no longer injects `$history`
 
 ## UI interactions
 
@@ -252,7 +223,7 @@ Every message has action buttons below the bubble:
 | --- | --- | --- |
 | Copy | All messages | Copies the raw text (Markdown source for assistant messages); briefly shows "Copied" |
 | Edit | User messages | Loads the content back into the input and focuses it; sending appends a new message |
-| Retract | All messages | Confirms, then deletes it; with persistence enabled the database row is removed too |
+| Retract | All messages | Confirms, then deletes the message and its database row |
 | Regenerate | Last assistant message | Deletes that reply and requests a new one using the preceding user message |
 
 Edit, retract and regenerate are ignored while a reply is in progress (`replying`).
@@ -275,21 +246,19 @@ Edit, retract and regenerate are ignored while a reply is in progress (`replying
 
 ## Data and isolation
 
-| Agent type | Message storage | Conversation ID |
-| --- | --- | --- |
-| Plain `Conversational` | Session (`filament-chat-assistant.messages.*`) | Session |
-| `RemembersConversations` | Database (`agent_conversation_messages`) | Session stores only the conversation ID |
+| Storage | Description |
+| --- | --- |
+| Database (`agent_conversation_messages`) | Message bodies, written by the AI SDK |
+| Session | Only the conversation ID plus a UI cache of up to 50 messages (unreplied messages and agent switching) |
 
 - Isolation is by authenticated user + tenant (`platform` for the platform panel) + agent config key
-- With persistence enabled the session still keeps a UI cache of up to 50 messages for agent switching and unreplied messages
 - Session keys include the agent config key; changing the key starts a fresh local conversation
 
 ## Known limitations
 
-- With persistence enabled, the SDK writes the user message when the whole turn completes, so after a reload the user bubble shows the completion time rather than the send time
+- The SDK writes the user message when the whole turn completes, so after a reload the user bubble shows the completion time rather than the send time
 - "New conversation" does not delete previous database conversations; there is no conversation list or cleanup command yet
-- Without `RemembersConversations`, messages live only in the session and disappear when the browser session ends
-- Tool-only turns without text output may render an empty assistant bubble in database mode
+- Tool-only turns without text output may render an empty assistant bubble
 - Only `zh_CN` and `en` translations are bundled; other locales fall back to the host application's fallback locale
 - The `agents` grouping heuristic treats any array value as a group; do not put arrays in a flat configuration
 
@@ -308,7 +277,7 @@ Coverage includes:
 - Plugin render conditions: authentication, `enabled`, per-panel / `*` agent resolution
 - Component: agent resolution and switching, same-class multi-instance isolation, invalid agent filtering, message trimming, input validation, streaming replies, copy / edit / retract / regenerate, clearing the input, timestamps and status rendering
 - Persistence: `RememberedConversation` reads and deletes
-- `ChatAssistantService`: history passing, conversation continuation, error fallback, debug detail toggle
+- `ChatAssistantService`: user / tenant injection, conversation continuation, error fallback, debug detail toggle
 
 > Testbench development dependencies require PHP 8.3+.
 

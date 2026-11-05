@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-05
+
+### Breaking Changes
+
+- `ChatAssistantAgent` now extends `Laravel\Ai\Contracts\RemembersConversations`; every agent must use the `RemembersConversations` trait and store conversations in the database
+- Removed the `$history` constructor injection; conversation history is read from the AI SDK store instead of the UI message list
+- Session storage is now only a UI cache and holds the active conversation ID
+
+### Changed
+
+- The agent constructor only receives `$user` and `$tenantId`
+
 ## [1.1.0] - 2026-11-05
 
 ### Added

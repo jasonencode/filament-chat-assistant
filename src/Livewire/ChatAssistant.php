@@ -213,7 +213,7 @@ class ChatAssistant extends Component
             return;
         }
 
-        if ($this->remembersConversation()) {
+        if ($this->remembersConversation() && $this->conversationId() !== null) {
             if (!empty($last['id'])) {
                 RememberedConversation::deleteLatestAssistant($this->conversationId());
             }
@@ -319,19 +319,15 @@ class ChatAssistant extends Component
                         'created_at' => now()->toIso8601String(),
                     ];
                 }
-
-                $this->trimMessages();
-                $this->persistMessages();
             } else {
                 $this->messages[] = [
                     'role' => 'assistant',
                     'content' => trim($reply) !== '' ? $reply : __('filament-chat-assistant::chat-assistant.error_service'),
                     'created_at' => now()->toIso8601String(),
                 ];
-
-                $this->trimMessages();
-                $this->persistMessages();
             }
+            $this->trimMessages();
+            $this->persistMessages();
         } catch (Throwable $exception) {
             report($exception);
 
@@ -397,7 +393,7 @@ class ChatAssistant extends Component
     }
 
     /**
-     * 加载消息：落库模式读 AI SDK 会话表，否则读 session
+     * 加载消息：有会话 ID 时读 AI SDK 会话表，否则读本地缓存
      *
      * @return array<int, array{id?: string, role: string, content: string, created_at?: string}>
      */

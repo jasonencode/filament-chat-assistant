@@ -67,7 +67,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | 可配置一个或多个 Agent，对话框中可以在它们之间切换。
-    | 每个 Agent 需实现 ChatAssistantAgent，构造函数需接受 user 与 tenantId。
+    | 每个 Agent 需实现 ChatAssistantAgent 并使用 RemembersConversations（见 README）。
     |
     | 平铺写法（所有面板共用）：
     |
