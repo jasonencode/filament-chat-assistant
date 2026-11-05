@@ -64,10 +64,8 @@ use Jason\FilamentChatAssistant\FilamentChatAssistantPlugin;
 return [
     'enabled' => env('FILAMENT_CHAT_ASSISTANT_ENABLED', true),
 
-    // 名称、默认尺寸、全屏、新会话按钮
+    // 默认尺寸、全屏、新会话按钮
     'ui' => [
-        // 为空时使用语言包中的 title；配置了 Agent 时优先显示 Agent 的 name()
-        'title' => env('FILAMENT_CHAT_ASSISTANT_TITLE'),
         // 首次打开时的默认尺寸（像素），用户拖拽后的尺寸会保存在 localStorage
         'width' => env('FILAMENT_CHAT_ASSISTANT_WIDTH', 600),
         'height' => env('FILAMENT_CHAT_ASSISTANT_HEIGHT', 800),
@@ -83,10 +81,21 @@ return [
         'product' => App\Ai\Agents\ProductSearch::class,
     ],
 
-    // 为空表示所有挂载插件的面板；可限制为 ['backend'] / ['tenant']
-    'panels' => [],
+    // 按面板区分 Agent：键为面板 ID，'*' 兜底未列出的面板
+    // 'agents' => [
+    //     'backend' => ['order' => App\Ai\Agents\OrderSearch::class],
+    //     'tenant' => ['product' => App\Ai\Agents\ProductSearch::class],
+    //     '*' => ['order' => App\Ai\Agents\OrderSearch::class],
+    // ],
 ];
 ```
+
+`agents` 支持两种写法：
+
+- **平铺**：所有面板共用同一组 Agent
+- **按面板分组**：键为面板 ID（`backend` / `tenant` 等），当前面板取对应的那组；未列出的面板使用 `'*'` 兜底，没有 `'*'` 则该面板不渲染对话框
+
+插件只在「当前面板解析出至少一个 Agent」时挂载，因此不需要额外的面板白名单配置。
 
 发布后的配置文件会与包内默认值合并，只需保留要覆盖的键即可。
 
@@ -95,11 +104,16 @@ return [
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `FILAMENT_CHAT_ASSISTANT_ENABLED` | `true` | 是否启用插件 |
-| `FILAMENT_CHAT_ASSISTANT_TITLE` | 空 | 对话框名称，为空时使用语言包 |
 | `FILAMENT_CHAT_ASSISTANT_WIDTH` | `600` | 默认宽度（像素） |
 | `FILAMENT_CHAT_ASSISTANT_HEIGHT` | `800` | 默认高度（像素） |
 | `FILAMENT_CHAT_ASSISTANT_FULLSCREEN` | `true` | 是否允许最大化 |
 | `FILAMENT_CHAT_ASSISTANT_NEW_CONVERSATION` | `true` | 是否显示「开始新会话」按钮 |
+
+### 错误提示
+
+AI 调用失败时，对话框里始终只显示「AI 服务暂时不可用，请稍后再试。」；异常类名与 message 仅在
+`chat-assistant.debug`（默认跟随 `APP_DEBUG`）开启时以引用块附在气泡里。生产环境保持
+`APP_DEBUG=false` 即可，用户看不到任何异常细节；完整堆栈仍会通过 `report()` 写入日志。
 
 ## 编写 Agent
 
@@ -165,22 +179,32 @@ class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
 
 ### 持久化会话（可选）
 
-如果希望对话记录由 `laravel/ai` 落库，可在 Agent 中使用 `RemembersConversations`：
+如果希望对话记录落库，让 Agent 使用 `laravel/ai` 的 `RemembersConversations`（trait + 接口）：
 
 ```php
-use Laravel\Ai\Concerns\RemembersConversations;
+use Laravel\Ai\Concerns\RemembersConversations as RemembersConversationsTrait;
+use Laravel\Ai\Contracts\RemembersConversations;
 
-class OrderSearch implements ChatAssistantAgent, Conversational, HasTools
+class OrderSearch implements ChatAssistantAgent, RemembersConversations, HasTools
 {
-    use Promptable, RemembersConversations;
+    use Promptable;
+    use RemembersConversationsTrait;
 }
 ```
 
-插件会在每次回复前调用 `continueOrStart($conversationId, $user)` 续接会话，并在回复结束后把 `currentConversation()` 返回的会话 ID 存入 session；点击「开始新会话」会清除该 ID。未使用该 trait 时，插件仅通过构造函数传入 `$history`，不负责持久化。
+启用后：
+
+- 消息由 AI SDK 自动写入 `agent_conversations` / `agent_conversation_messages`
+- 插件在有会话 ID 时直接读这两张表渲染对话框；「撤回」「重新生成」会删除对应的数据库行
+- 「开始新会话」只是切换新的会话 ID，旧会话仍保留在数据库中
+- **不要在 Agent 里再自定义 `messages()`**，否则会覆盖 trait 从数据库读取历史的实现
+- 建议关闭自动生成标题（本仓库 `config/ai.php` 已设置 `ai.conversations.generate_title = false`），避免新会话额外请求一次模型
+
+未使用该能力时，插件仍走 session + 构造函数传入的 `$history`，行为不变。
 
 ## 使用说明
 
-- 会话数据保存在 session 中，不写入数据库；浏览器会话结束时失效
+- 未启用 `RemembersConversations` 的 Agent：消息保存在 session 中，浏览器会话结束时失效；启用后由 AI SDK 写入数据库
 - session 键按「用户 + 租户 + Agent」区分，包含当前 Agent、消息、会话 ID 和展开状态
 - 消息最多保留最近 50 条，单条输入上限 2000 字符
 - Enter 发送，Shift + Enter 换行；输入法组合输入期间不会误发送

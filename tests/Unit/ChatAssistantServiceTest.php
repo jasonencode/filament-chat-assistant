@@ -122,6 +122,75 @@ class ChatAssistantServiceTest extends TestCase
         );
     }
 
+    public function test_it_hides_the_exception_detail_when_debug_is_disabled(): void
+    {
+        config(['chat-assistant.debug' => false]);
+
+        $stream = $this->service()->stream(
+            messages: [['role' => 'user', 'content' => '你好']],
+            user: $this->makeUser(),
+            agentClass: FailingAgent::class,
+        );
+
+        $message = implode('', iterator_to_array($stream));
+
+        $this->assertSame('AI 服务暂时不可用，请稍后再试。', $message);
+        $this->assertStringNotContainsString('RuntimeException', $message);
+        $this->assertStringNotContainsString('AI provider is unavailable.', $message);
+    }
+
+    public function test_it_appends_the_exception_detail_when_debug_is_enabled(): void
+    {
+        config(['chat-assistant.debug' => true]);
+
+        $stream = $this->service()->stream(
+            messages: [['role' => 'user', 'content' => '你好']],
+            user: $this->makeUser(),
+            agentClass: FailingAgent::class,
+        );
+
+        $message = implode('', iterator_to_array($stream));
+
+        $this->assertStringContainsString('AI 服务暂时不可用，请稍后再试。', $message);
+        $this->assertStringContainsString('RuntimeException: AI provider is unavailable.', $message);
+    }
+
+    public function test_it_exposes_the_last_exception_after_a_failure(): void
+    {
+        $service = $this->service();
+
+        iterator_to_array($service->stream(
+            messages: [['role' => 'user', 'content' => '你好']],
+            user: $this->makeUser(),
+            agentClass: FailingAgent::class,
+        ));
+
+        $this->assertInstanceOf(\RuntimeException::class, $service->lastException());
+    }
+
+    public function test_it_clears_the_last_exception_on_success(): void
+    {
+        $service = $this->service();
+
+        iterator_to_array($service->stream(
+            messages: [['role' => 'user', 'content' => '你好']],
+            user: $this->makeUser(),
+            agentClass: FailingAgent::class,
+        ));
+
+        $this->assertNotNull($service->lastException());
+
+        TestAgent::fake(['好的']);
+
+        iterator_to_array($service->stream(
+            messages: [['role' => 'user', 'content' => '你好']],
+            user: $this->makeUser(),
+            agentClass: TestAgent::class,
+        ));
+
+        $this->assertNull($service->lastException());
+    }
+
     protected function service(): ChatAssistantService
     {
         return $this->app->make(ChatAssistantService::class);

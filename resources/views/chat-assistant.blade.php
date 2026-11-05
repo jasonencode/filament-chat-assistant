@@ -4,11 +4,33 @@
         'allow_unsafe_links' => false,
     ]);
 
+    // 消息时间：今天显示 H:i，今年显示 m-d H:i，更早显示完整日期
+    $renderTime = static function (mixed $value): ?array {
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+
+        $time = \Illuminate\Support\Carbon::parse($value)
+            ->setTimezone(\Filament\Support\Facades\FilamentTimezone::get());
+
+        return [
+            'label' => match (true) {
+                $time->isToday() => $time->format('H:i'),
+                $time->isCurrentYear() => $time->format('m-d H:i'),
+                default => $time->format('Y-m-d H:i'),
+            },
+            'title' => $time->format('Y-m-d H:i:s'),
+            'datetime' => $time->toIso8601String(),
+        ];
+    };
+
     $defaultWidth = (int) config('chat-assistant.ui.width', 384);
     $defaultHeight = (int) config('chat-assistant.ui.height', 544);
     $allowFullscreen = (bool) config('chat-assistant.ui.fullscreen', true);
     $showNewConversation = (bool) config('chat-assistant.ui.new_conversation', true);
-    $assistantName = (string) ($agentName ?: (config('chat-assistant.ui.title') ?: __('filament-chat-assistant::chat-assistant.title')));
+    $toggleIcon = trim((string) config('chat-assistant.ui.toggle_icon'));
+    $toggleIconUrl = $toggleIcon !== '' ? asset($toggleIcon) : null;
+    $assistantName = (string) ($agentName ?: __('filament-chat-assistant::chat-assistant.title'));
 @endphp
 
 <div
@@ -92,6 +114,12 @@
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
+        @elseif ($toggleIconUrl)
+            <img
+                src="{{ $toggleIconUrl }}"
+                alt="{{ $assistantName }}"
+                class="tk-assistant__toggle-icon"
+            >
         @else
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 8V4H8" />
@@ -168,7 +196,14 @@
                         <span>{{ $assistantName }}</span>
                     @endif
 
-                    <span class="tk-assistant__status" aria-hidden="true"></span>
+                    <span
+                        class="tk-assistant__status{{ $hasError ? ' tk-assistant__status--error' : '' }}"
+                        wire:loading.class="tk-assistant__status--busy"
+                        wire:target="requestReply"
+                        role="status"
+                        title="{{ $hasError ? __('filament-chat-assistant::chat-assistant.status_error') : __('filament-chat-assistant::chat-assistant.status_idle') }}"
+                        aria-label="{{ $hasError ? __('filament-chat-assistant::chat-assistant.status_error') : __('filament-chat-assistant::chat-assistant.status_idle') }}"
+                    ></span>
                 </div>
 
                 <div class="tk-assistant__actions">
@@ -277,7 +312,11 @@
 
                         <div class="tk-assistant__message">
                             <div class="tk-assistant__message-name">
-                                {{ $message['role'] === 'assistant' ? $assistantName : $userName }}
+                                <span>{{ $message['role'] === 'assistant' ? $assistantName : $userName }}</span>
+
+                                @if ($time = $renderTime($message['created_at'] ?? null))
+                                    <time class="tk-assistant__message-time" datetime="{{ $time['datetime'] }}" title="{{ $time['title'] }}">{{ $time['label'] }}</time>
+                                @endif
                             </div>
 
                             <div class="tk-assistant__bubble">
@@ -286,6 +325,98 @@
                                 @else
                                     {!! nl2br(e($message['content'])) !!}
                                 @endif
+                            </div>
+
+                            <div class="tk-assistant__message-actions">
+                                @if ($message['role'] === 'user')
+                                    <button
+                                        type="button"
+                                        class="tk-assistant__edit"
+                                        wire:click="editMessage({{ $index }})"
+                                        title="{{ __('filament-chat-assistant::chat-assistant.edit') }}"
+                                        aria-label="{{ __('filament-chat-assistant::chat-assistant.edit') }}"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 7.125v11.25A2.625 2.625 0 0 1 16.875 21H4.125A2.625 2.625 0 0 1 1.5 18.375V5.625A2.625 2.625 0 0 1 4.125 3h11.25" />
+                                        </svg>
+
+                                        <span>{{ __('filament-chat-assistant::chat-assistant.edit') }}</span>
+                                    </button>
+                                @endif
+
+                                <button
+                                    type="button"
+                                    class="tk-assistant__copy"
+                                    data-copy="{{ $message['content'] }}"
+                                    data-copy-label="{{ __('filament-chat-assistant::chat-assistant.copy') }}"
+                                    data-copied-label="{{ __('filament-chat-assistant::chat-assistant.copied') }}"
+                                    x-data="{ copied: false }"
+                                    x-on:click="
+                                        const text = $el.dataset.copy;
+                                        const done = () => {
+                                            copied = true;
+                                            setTimeout(() => copied = false, 1500);
+                                        };
+                                        const fallback = () => {
+                                            const area = document.createElement('textarea');
+                                            area.value = text;
+                                            area.style.position = 'fixed';
+                                            area.style.opacity = '0';
+                                            document.body.appendChild(area);
+                                            area.select();
+                                            document.execCommand('copy');
+                                            document.body.removeChild(area);
+                                            done();
+                                        };
+
+                                        if (navigator.clipboard && window.isSecureContext) {
+                                            navigator.clipboard.writeText(text).then(done).catch(fallback);
+                                        } else {
+                                            fallback();
+                                        }
+                                    "
+                                    :title="copied ? $root.dataset.copiedLabel : $root.dataset.copyLabel"
+                                    :aria-label="copied ? $root.dataset.copiedLabel : $root.dataset.copyLabel"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                                        <rect x="9" y="9" width="11" height="11" rx="2" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 15V5a2 2 0 0 1 2-2h8" />
+                                    </svg>
+
+                                    <span x-text="copied ? $root.dataset.copiedLabel : $root.dataset.copyLabel"></span>
+                                </button>
+
+                                @if ($message['role'] === 'assistant' && $loop->last)
+                                    <button
+                                        type="button"
+                                        class="tk-assistant__regenerate"
+                                        wire:click="regenerateReply"
+                                        title="{{ __('filament-chat-assistant::chat-assistant.regenerate') }}"
+                                        aria-label="{{ __('filament-chat-assistant::chat-assistant.regenerate') }}"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 0 0 4.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 0 1-15.357-2m15.357 2H15" />
+                                        </svg>
+
+                                        <span>{{ __('filament-chat-assistant::chat-assistant.regenerate') }}</span>
+                                    </button>
+                                @endif
+
+                                <button
+                                    type="button"
+                                    class="tk-assistant__retract"
+                                    wire:click="retractMessage({{ $index }})"
+                                    wire:confirm="{{ __('filament-chat-assistant::chat-assistant.retract_confirm') }}"
+                                    title="{{ __('filament-chat-assistant::chat-assistant.retract') }}"
+                                    aria-label="{{ __('filament-chat-assistant::chat-assistant.retract') }}"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                    </svg>
+
+                                    <span>{{ __('filament-chat-assistant::chat-assistant.retract') }}</span>
+                                </button>
                             </div>
                         </div>
 
@@ -301,7 +432,7 @@
                     <p class="tk-assistant__empty">{{ __('filament-chat-assistant::chat-assistant.empty', ['name' => $assistantName]) }}</p>
                 @endforelse
 
-                {{-- 等待 AI 回复时的加载动画 --}}
+                {{-- 等待与流式输出共用一行：头像、名称始终可见，首片到达后只隐藏 "..." --}}
                 <div
                     class="tk-assistant__row tk-assistant__row--assistant tk-assistant__typing"
                     wire:loading.flex
@@ -313,58 +444,76 @@
                         <span class="tk-assistant__message-avatar tk-assistant__avatar--fallback">{{ mb_substr($assistantName, 0, 1) }}</span>
                     @endif
 
-                    <div class="tk-assistant__bubble tk-assistant__typing-bubble" aria-label="{{ __('filament-chat-assistant::chat-assistant.thinking') }}">
-                        <span></span><span></span><span></span>
-                    </div>
-                </div>
+                    <div class="tk-assistant__message">
+                        <div class="tk-assistant__message-name">{{ $assistantName }}</div>
 
-                {{-- 流式输出目标：仅在生成时可见，结束后由最终渲染替换 --}}
-                <div class="tk-assistant__row tk-assistant__row--assistant tk-assistant__row--draft">
-                    <div class="tk-assistant__bubble tk-assistant__bubble--stream" wire:stream="chat-stream"></div>
+                        <div class="tk-assistant__bubble tk-assistant__typing-bubble" aria-label="{{ __('filament-chat-assistant::chat-assistant.thinking') }}">
+                            <span></span><span></span><span></span>
+                        </div>
+
+                        {{-- 流式输出目标：结束后由最终渲染替换 --}}
+                        <div class="tk-assistant__bubble tk-assistant__bubble--stream" wire:stream="chat-stream"></div>
+                    </div>
                 </div>
             </div>
 
             <form class="tk-assistant__composer" wire:submit="sendMessage">
-                <textarea
-                    class="tk-assistant__input"
-                    wire:model="question"
-                    rows="1"
-                    maxlength="2000"
-                    placeholder="{{ __('filament-chat-assistant::chat-assistant.placeholder') }}"
-                    aria-label="{{ __('filament-chat-assistant::chat-assistant.message_aria') }}"
-                    @disabled(! $agentConfigured)
-                    x-data="{
-                        resize() {
-                            const el = $el;
-                            const borders = el.offsetHeight - el.clientHeight;
+                <div class="tk-assistant__field">
+                    <textarea
+                        class="tk-assistant__input"
+                        wire:model="question"
+                        rows="1"
+                        maxlength="2000"
+                        placeholder="{{ __('filament-chat-assistant::chat-assistant.placeholder') }}"
+                        aria-label="{{ __('filament-chat-assistant::chat-assistant.message_aria') }}"
+                        @disabled(! $agentConfigured)
+                        x-data="{
+                            resize() {
+                                const el = $el;
+                                const borders = el.offsetHeight - el.clientHeight;
 
-                            el.style.height = 'auto';
+                                el.style.height = 'auto';
 
-                            const height = el.scrollHeight + borders;
+                                const height = el.scrollHeight + borders;
 
-                            el.style.height = Math.min(height, 120) + 'px';
-                            el.style.overflowY = height > 120 ? 'auto' : 'hidden';
-                        },
-                    }"
-                    x-init="resize()"
-                    x-on:input="resize()"
-                    x-on:chat-reply-requested.window="resize()"
-                    x-on:keydown.enter="if (! $event.shiftKey && ! $event.isComposing) { $event.preventDefault(); $wire.sendMessage(); }"
-                ></textarea>
+                                el.style.height = Math.min(height, 120) + 'px';
+                                el.style.overflowY = height > 120 ? 'auto' : 'hidden';
+                            },
+                        }"
+                        x-init="resize()"
+                        x-on:input="resize()"
+                        x-on:chat-reply-requested.window="resize()"
+                        x-on:chat-edit-message.window="$nextTick(() => { resize(); $el.focus(); })"
+                        x-on:chat-input-cleared.window="$nextTick(() => { resize(); $el.focus(); })"
+                        x-on:keydown.enter="if (! $event.shiftKey && ! $event.isComposing) { $event.preventDefault(); $wire.sendMessage(); }"
+                    ></textarea>
 
-                <button
-                    type="submit"
-                    class="tk-assistant__send"
-                    title="{{ __('filament-chat-assistant::chat-assistant.send') }}"
-                    aria-label="{{ __('filament-chat-assistant::chat-assistant.send') }}"
-                    @disabled(! $agentConfigured)
-                    wire:loading.attr="disabled"
-                    wire:target="sendMessage,requestReply"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-                    </svg>
-                </button>
+                    <button
+                        type="button"
+                        class="tk-assistant__clear"
+                        wire:click="clearQuestion"
+                        title="{{ __('filament-chat-assistant::chat-assistant.clear') }}"
+                        aria-label="{{ __('filament-chat-assistant::chat-assistant.clear') }}"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+
+                    <button
+                        type="submit"
+                        class="tk-assistant__send"
+                        title="{{ __('filament-chat-assistant::chat-assistant.send') }}"
+                        aria-label="{{ __('filament-chat-assistant::chat-assistant.send') }}"
+                        @disabled(! $agentConfigured)
+                        wire:loading.attr="disabled"
+                        wire:target="sendMessage,requestReply"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                        </svg>
+                    </button>
+                </div>
             </form>
 
             @error('question')
@@ -405,6 +554,12 @@
         .tk-assistant__toggle svg {
             width: 1.4rem;
             height: 1.4rem;
+        }
+
+        .tk-assistant__toggle-icon {
+            width: 1.75rem;
+            height: 1.75rem;
+            object-fit: contain;
         }
 
         .tk-assistant__panel {
@@ -464,23 +619,6 @@
             width: 16px;
             height: 16px;
             cursor: nwse-resize;
-        }
-
-        .tk-assistant__resize--corner::after {
-            content: '';
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            width: 8px;
-            height: 8px;
-            border-top: 2px solid rgba(127, 127, 127, .55);
-            border-left: 2px solid rgba(127, 127, 127, .55);
-            border-top-left-radius: 2px;
-            opacity: .35;
-        }
-
-        .tk-assistant__panel:hover .tk-assistant__resize--corner::after {
-            opacity: .75;
         }
 
         .dark .tk-assistant__panel {
@@ -594,6 +732,28 @@
             height: .5rem;
             border-radius: 9999px;
             background: #22c55e;
+            transition: background-color .15s ease;
+        }
+
+        /* 上次回复失败 */
+        .tk-assistant__status--error {
+            background: #ef4444;
+        }
+
+        /* 正在生成（wire:loading 客户端切换），放在 error 之后以优先生效 */
+        .tk-assistant__status--busy {
+            background: #f59e0b;
+            animation: tk-assistant-status-pulse 1s infinite ease-in-out;
+        }
+
+        @keyframes tk-assistant-status-pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .3;
+            }
         }
 
         .tk-assistant__avatar {
@@ -702,10 +862,65 @@
         }
 
         .tk-assistant__message-name {
+            display: flex;
+            align-items: baseline;
+            gap: .35rem;
             padding-inline: .2rem;
             font-size: .7rem;
             line-height: 1.4;
             opacity: .6;
+        }
+
+        .tk-assistant__message-time {
+            font-size: .65rem;
+            opacity: .8;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tk-assistant__message-actions {
+            display: flex;
+            gap: .15rem;
+            padding-inline: .2rem;
+        }
+
+        .tk-assistant__copy,
+        .tk-assistant__edit,
+        .tk-assistant__retract,
+        .tk-assistant__regenerate {
+            display: inline-flex;
+            align-items: center;
+            gap: .25rem;
+            padding: .15rem .35rem;
+            border: 0;
+            border-radius: .35rem;
+            background: transparent;
+            color: inherit;
+            font-size: .65rem;
+            line-height: 1.4;
+            opacity: .45;
+            cursor: pointer;
+            transition: opacity .15s ease, background-color .15s ease;
+        }
+
+        .tk-assistant__copy:hover,
+        .tk-assistant__copy:focus-visible,
+        .tk-assistant__edit:hover,
+        .tk-assistant__edit:focus-visible,
+        .tk-assistant__retract:hover,
+        .tk-assistant__retract:focus-visible,
+        .tk-assistant__regenerate:hover,
+        .tk-assistant__regenerate:focus-visible {
+            background: rgba(127, 127, 127, .14);
+            opacity: 1;
+            outline: none;
+        }
+
+        .tk-assistant__copy svg,
+        .tk-assistant__edit svg,
+        .tk-assistant__retract svg,
+        .tk-assistant__regenerate svg {
+            width: .8rem;
+            height: .8rem;
         }
 
         .tk-assistant__bubble {
@@ -827,7 +1042,13 @@
             border-top: 1px solid rgba(127, 127, 127, .25);
         }
 
-        .tk-assistant__row--draft:has(.tk-assistant__bubble--stream:empty) {
+        /* 尚未收到首个分片时隐藏流式气泡，避免出现空气泡 */
+        .tk-assistant__bubble--stream:empty {
+            display: none;
+        }
+
+        /* 首个分片到达后隐藏 "..."，头像与名称保持可见 */
+        .tk-assistant__messages:has(.tk-assistant__bubble--stream:not(:empty)) .tk-assistant__typing-bubble {
             display: none;
         }
 
@@ -879,19 +1100,33 @@
 
         .tk-assistant__composer {
             display: flex;
-            align-items: flex-end;
-            gap: .5rem;
             padding: .75rem;
             border-top: 1px solid rgba(127, 127, 127, .18);
         }
 
-        .tk-assistant__input {
+        .tk-assistant__field {
+            display: flex;
             flex: 1;
-            min-height: 2.5rem;
-            max-height: 7.5rem;
-            padding: .55rem .75rem;
+            align-items: flex-end;
+            gap: .2rem;
+            min-width: 0;
+            padding: .25rem;
             border: 1px solid rgba(127, 127, 127, .28);
             border-radius: .75rem;
+        }
+
+        .tk-assistant__field:focus-within {
+            border-color: var(--primary-600, #4f46e5);
+            box-shadow: 0 0 0 1px var(--primary-600, #4f46e5);
+        }
+
+        .tk-assistant__input {
+            flex: 1;
+            min-width: 0;
+            min-height: 2.25rem;
+            max-height: 7.5rem;
+            padding: .4rem .45rem;
+            border: 0;
             background: transparent;
             color: inherit;
             font: inherit;
@@ -901,19 +1136,15 @@
             resize: none;
         }
 
-        .tk-assistant__input:focus {
-            border-color: var(--primary-600, #4f46e5);
-            box-shadow: 0 0 0 1px var(--primary-600, #4f46e5);
-        }
-
         .tk-assistant__send {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 2.5rem;
-            height: 2.5rem;
+            width: 2.25rem;
+            height: 2.25rem;
+            flex: none;
             border: 0;
-            border-radius: .75rem;
+            border-radius: .6rem;
             background: var(--primary-600, #4f46e5);
             color: #fff;
             cursor: pointer;
@@ -927,6 +1158,33 @@
         .tk-assistant__send svg {
             width: 1.1rem;
             height: 1.1rem;
+        }
+
+        .tk-assistant__clear {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            flex: none;
+            border: 0;
+            border-radius: .6rem;
+            background: transparent;
+            color: inherit;
+            opacity: .55;
+            cursor: pointer;
+        }
+
+        .tk-assistant__clear:hover,
+        .tk-assistant__clear:focus-visible {
+            background: rgba(127, 127, 127, .14);
+            opacity: 1;
+            outline: none;
+        }
+
+        .tk-assistant__clear svg {
+            width: 1rem;
+            height: 1rem;
         }
 
         .tk-assistant__error {

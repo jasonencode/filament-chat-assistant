@@ -6,6 +6,7 @@ use Filament\Contracts\Plugin;
 use Filament\Panel;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\Facades\Blade;
+use Jason\FilamentChatAssistant\Support\PanelAgents;
 
 class FilamentChatAssistantPlugin implements Plugin
 {
@@ -52,8 +53,13 @@ class FilamentChatAssistantPlugin implements Plugin
             return false;
         }
 
-        $panels = config('chat-assistant.panels', []);
+        $agents = config('chat-assistant.agents', []);
 
-        return blank($panels) || in_array(filament()->getCurrentPanel()?->getId(), $panels, true);
+        if (!is_array($agents)) {
+            return false;
+        }
+
+        // 只在实际配置了 Agent 的面板上渲染；分组写法下未列出的面板（且无 '*'）不渲染
+        return PanelAgents::forPanel($agents, filament()->getCurrentPanel()?->getId()) !== [];
     }
 }

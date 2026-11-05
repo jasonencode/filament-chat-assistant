@@ -16,6 +16,19 @@ use Throwable;
 class ChatAssistantService
 {
     /**
+     * 最近一次流式回复捕获到的异常
+     */
+    protected ?Throwable $lastException = null;
+
+    /**
+     * 最近一次流式回复捕获到的异常，成功时为 null
+     */
+    public function lastException(): ?Throwable
+    {
+        return $this->lastException;
+    }
+
+    /**
      * @param  array<int, array{role: string, content: string}>  $messages  当前会话消息
      * @param  object  $user  当前登录用户（agent 会话参与者）
      * @param  int|null  $tenantId  当前租户 ID；运营端为空
@@ -31,6 +44,8 @@ class ChatAssistantService
         ?string $conversationId = null,
         ?string $agentClass = null,
     ): Generator {
+        $this->lastException = null;
+
         $prompt = (string) ($messages[array_key_last($messages)]['content'] ?? '');
 
         $history = [];
@@ -70,12 +85,30 @@ class ChatAssistantService
         } catch (Throwable $exception) {
             report($exception);
 
-            yield 'AI 服务暂时不可用，请稍后再试。';
+            $this->lastException = $exception;
+
+            yield $this->errorMessage($exception);
         }
 
         return method_exists($agent, 'currentConversation')
             ? $agent->currentConversation()
             : null;
+    }
+
+    /**
+     * 把异常转换成对话气泡所示的错误消息
+     *
+     * 开启 chat-assistant.debug 时附带异常类名与 message，便于本地排查。
+     */
+    public function errorMessage(Throwable $exception): string
+    {
+        $message = __('filament-chat-assistant::chat-assistant.error_service');
+
+        if (config('chat-assistant.debug')) {
+            $message .= "\n\n> ".class_basename($exception).': '.$exception->getMessage();
+        }
+
+        return $message;
     }
 
     /**

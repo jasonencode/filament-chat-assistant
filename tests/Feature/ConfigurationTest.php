@@ -11,13 +11,12 @@ class ConfigurationTest extends TestCase
     public function test_it_merges_the_default_configuration(): void
     {
         $this->assertTrue(config('chat-assistant.enabled'));
-        $this->assertNull(config('chat-assistant.ui.title'));
         $this->assertSame(600, config('chat-assistant.ui.width'));
         $this->assertSame(800, config('chat-assistant.ui.height'));
         $this->assertTrue(config('chat-assistant.ui.fullscreen'));
         $this->assertTrue(config('chat-assistant.ui.new_conversation'));
+        $this->assertNull(config('chat-assistant.ui.toggle_icon'));
         $this->assertSame([], config('chat-assistant.agents'));
-        $this->assertSame([], config('chat-assistant.panels'));
     }
 
     public function test_it_registers_the_livewire_component(): void

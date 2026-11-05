@@ -5,6 +5,8 @@ namespace Jason\FilamentChatAssistant\Livewire;
 use Illuminate\Contracts\View\View;
 use Jason\FilamentChatAssistant\Contracts\ChatAssistantAgent;
 use Jason\FilamentChatAssistant\Services\ChatAssistantService;
+use Jason\FilamentChatAssistant\Support\PanelAgents;
+use Jason\FilamentChatAssistant\Support\RememberedConversation;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 use Throwable;
@@ -19,6 +21,11 @@ class ChatAssistant extends Component
     public bool $open = false;
 
     public bool $replying = false;
+
+    /**
+     * 最近一次回复是否失败，用于标题栏状态指示器
+     */
+    public bool $hasError = false;
 
     /** @var array<int, array{key: string, class: string, name: string, avatar: string|null}> */
     public array $agents = [];
@@ -38,7 +45,9 @@ class ChatAssistant extends Component
     #[Validate('required|string|max:2000')]
     public string $question = '';
 
-    /** @var array<int, array{role: string, content: string}> */
+    /**
+     * @var array<int, array{id?: string, role: string, content: string, created_at?: string}>
+     */
     public array $messages = [];
 
     public function mount(): void
@@ -50,7 +59,7 @@ class ChatAssistant extends Component
         $this->restoreActiveAgent();
 
         $this->open = (bool) session($this->openSessionKey(), false);
-        $this->messages = session($this->messageSessionKey(), []);
+        $this->messages = $this->loadMessages();
     }
 
     public function render(): View
@@ -86,7 +95,8 @@ class ChatAssistant extends Component
 
         session([$this->agentSessionKey() => $this->agentClass]);
 
-        $this->messages = session($this->messageSessionKey(), []);
+        $this->messages = $this->loadMessages();
+        $this->persistMessages();
     }
 
     public function resetConversation(): void
@@ -98,6 +108,26 @@ class ChatAssistant extends Component
             $this->messageSessionKey(),
             $this->conversationSessionKey(),
         ]);
+    }
+
+    /**
+     * 把指定用户消息放入输入框，便于修改后重新发送
+     */
+    public function editMessage(int $index): void
+    {
+        if ($this->replying) {
+            return;
+        }
+
+        $message = $this->messages[$index] ?? null;
+
+        if ($message === null || ($message['role'] ?? null) !== 'user') {
+            return;
+        }
+
+        $this->question = (string) ($message['content'] ?? '');
+
+        $this->dispatch('chat-edit-message');
     }
 
     /**
@@ -114,12 +144,93 @@ class ChatAssistant extends Component
         $this->messages[] = [
             'role' => 'user',
             'content' => trim($this->question),
+            'created_at' => now()->toIso8601String(),
         ];
 
         $this->question = '';
 
         $this->trimMessages();
         $this->persistMessages();
+
+        $this->dispatch('chat-reply-requested');
+    }
+
+    /**
+     * 清空输入框
+     */
+    public function clearQuestion(): void
+    {
+        $this->question = '';
+
+        $this->resetValidation('question');
+
+        $this->dispatch('chat-input-cleared');
+    }
+
+    /**
+     * 撤回单条消息（同时从后续 AI 上下文中移除）
+     */
+    public function retractMessage(int $index): void
+    {
+        if ($this->replying || !array_key_exists($index, $this->messages)) {
+            return;
+        }
+
+        $message = $this->messages[$index];
+
+        if ($this->remembersConversation() && !empty($message['id'])) {
+            RememberedConversation::delete($this->conversationId(), $message['id']);
+
+            $this->messages = $this->loadMessages();
+            $this->persistMessages();
+        } else {
+            array_splice($this->messages, $index, 1);
+
+            $this->persistMessages();
+        }
+
+        $this->hasError = false;
+    }
+
+    /**
+     * 撤回最后一条助手回复，并用上一条用户消息重新生成
+     */
+    public function regenerateReply(): void
+    {
+        if ($this->replying || $this->agentClass === null || $this->messages === []) {
+            return;
+        }
+
+        $last = $this->messages[array_key_last($this->messages)];
+
+        if (($last['role'] ?? null) !== 'assistant') {
+            return;
+        }
+
+        if ($this->remembersConversation()) {
+            if (!empty($last['id'])) {
+                RememberedConversation::deleteLatestAssistant($this->conversationId());
+            }
+
+            $this->messages = $this->loadMessages();
+            $this->persistMessages();
+        } else {
+            array_pop($this->messages);
+        }
+
+        if ($this->messages === []) {
+            $this->persistMessages();
+
+            return;
+        }
+
+        $previous = $this->messages[array_key_last($this->messages)];
+
+        $this->persistMessages();
+
+        if (($previous['role'] ?? null) !== 'user') {
+            return;
+        }
 
         $this->dispatch('chat-reply-requested');
     }
@@ -146,9 +257,16 @@ class ChatAssistant extends Component
         }
 
         $this->replying = true;
+        $this->hasError = false;
+
+        // PHP 默认 30 秒执行上限会让长连接抛出不可捕获的 FatalError，
+        // 这里先放宽，超时才会以普通异常的形式回到 catch 并在对话框里展示。
+        $this->applyExecutionTimeLimit();
+
+        $service = app(ChatAssistantService::class);
 
         try {
-            $stream = app(ChatAssistantService::class)->stream(
+            $stream = $service->stream(
                 messages: $this->messages,
                 user: $user,
                 tenantId: filament()->getTenant()?->getKey(),
@@ -168,15 +286,77 @@ class ChatAssistant extends Component
                 session([$this->conversationSessionKey() => $conversationId]);
             }
 
+            $exception = $service->lastException();
+            $this->hasError = $exception !== null;
+
+            if ($this->remembersConversation()) {
+                $stored = $this->loadMessages();
+
+                if ($stored !== []) {
+                    $this->messages = $stored;
+                } else {
+                    $this->messages[] = [
+                        'role' => 'assistant',
+                        'content' => trim($reply) !== '' ? $reply : __('filament-chat-assistant::chat-assistant.error_service'),
+                        'created_at' => now()->toIso8601String(),
+                    ];
+                }
+
+                if ($exception !== null) {
+                    $this->messages[] = [
+                        'role' => 'assistant',
+                        'content' => $service->errorMessage($exception),
+                        'created_at' => now()->toIso8601String(),
+                    ];
+                }
+
+                $this->trimMessages();
+                $this->persistMessages();
+            } else {
+                $this->messages[] = [
+                    'role' => 'assistant',
+                    'content' => trim($reply) !== '' ? $reply : __('filament-chat-assistant::chat-assistant.error_service'),
+                    'created_at' => now()->toIso8601String(),
+                ];
+
+                $this->trimMessages();
+                $this->persistMessages();
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $this->hasError = true;
+
+            if ($this->remembersConversation()) {
+                $stored = $this->loadMessages();
+
+                if ($stored !== []) {
+                    $this->messages = $stored;
+                }
+            }
+
             $this->messages[] = [
                 'role' => 'assistant',
-                'content' => trim($reply) !== '' ? $reply : 'AI 服务暂时不可用，请稍后再试。',
+                'content' => $service->errorMessage($exception),
+                'created_at' => now()->toIso8601String(),
             ];
 
             $this->trimMessages();
             $this->persistMessages();
         } finally {
             $this->replying = false;
+        }
+    }
+
+    /**
+     * 放宽本次流式请求的 PHP 执行时间上限
+     */
+    private function applyExecutionTimeLimit(): void
+    {
+        $timeout = (int) config('chat-assistant.timeout', 300);
+
+        if ($timeout > 0) {
+            @set_time_limit($timeout);
         }
     }
 
@@ -187,7 +367,37 @@ class ChatAssistant extends Component
 
     private function persistMessages(): void
     {
+        // 落库模式下这里只做 UI 缓存：真正的消息由 AI SDK 写入会话表
         session([$this->messageSessionKey() => $this->messages]);
+    }
+
+    /**
+     * 当前 Agent 是否把会话落库（RemembersConversations）
+     */
+    private function remembersConversation(): bool
+    {
+        return RememberedConversation::supports($this->agentClass);
+    }
+
+    private function conversationId(): ?string
+    {
+        $conversationId = session($this->conversationSessionKey());
+
+        return is_string($conversationId) ? $conversationId : null;
+    }
+
+    /**
+     * 加载消息：落库模式读 AI SDK 会话表，否则读 session
+     *
+     * @return array<int, array{id?: string, role: string, content: string, created_at?: string}>
+     */
+    private function loadMessages(): array
+    {
+        if ($this->remembersConversation() && ($conversationId = $this->conversationId()) !== null) {
+            return RememberedConversation::messages($conversationId);
+        }
+
+        return session($this->messageSessionKey(), []);
     }
 
     /**
@@ -201,9 +411,13 @@ class ChatAssistant extends Component
             return;
         }
 
-        $agents = config('chat-assistant.agents', []);
+        $configured = config('chat-assistant.agents', []);
 
-        if (!is_array($agents)) {
+        $agents = is_array($configured)
+            ? PanelAgents::forPanel($configured, filament()->getCurrentPanel()?->getId())
+            : [];
+
+        if ($agents === []) {
             return;
         }
 
