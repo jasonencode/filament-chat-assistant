@@ -18,6 +18,7 @@ return [
 
     'send' => '发送',
     'clear' => '清空',
+    'scroll_to_bottom' => '滚动到底部',
     'placeholder' => '输入消息，Enter 发送，Shift + Enter 换行',
     'message_aria' => '消息内容',
 

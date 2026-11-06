@@ -282,21 +282,75 @@
             @endif
 
             <div
-                class="tk-assistant__messages"
-                x-data
+                class="tk-assistant__messages-wrap"
+                x-data="{ atBottom: true }"
                 x-init="
-                    const container = $el;
-                    const scrollToBottom = () => { container.scrollTop = container.scrollHeight; };
+                    const container = $el.querySelector('.tk-assistant__messages');
+                    const button = $el.querySelector('.tk-assistant__scroll-bottom');
+                    const threshold = 32;
 
-                    new MutationObserver(scrollToBottom).observe(container, {
+                    const isNearBottom = () => container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+                    const sync = () => { atBottom = isNearBottom(); };
+                    const scrollToBottom = () => {
+                        const behavior = container.style.scrollBehavior;
+
+                        container.style.scrollBehavior = 'auto';
+                        container.scrollTop = container.scrollHeight;
+                        container.style.scrollBehavior = behavior;
+                    };
+
+                    container.addEventListener('scroll', sync, { passive: true });
+
+                    new MutationObserver(() => {
+                        if (atBottom) {
+                            scrollToBottom();
+                        }
+                    }).observe(container, {
                         childList: true,
                         subtree: true,
                         characterData: true,
                     });
 
+                    button.addEventListener('click', () => {
+                        atBottom = true;
+                        scrollToBottom();
+                    });
+
                     scrollToBottom();
+                    sync();
+                "
+                x-on:livewire:navigating.window="
+                    const container = $refs.messages;
+
+                    container.dataset.scrollTop = container.scrollTop;
+                "
+                x-on:livewire:navigated.window="
+                    const container = $refs.messages;
+                    const scrollTop = Number(container.dataset.scrollTop);
+
+                    if (! Number.isNaN(scrollTop)) {
+                        container.style.scrollBehavior = 'auto';
+                        container.scrollTop = scrollTop;
+                        container.style.scrollBehavior = '';
+
+                        atBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 32;
+                    }
+                "
+                x-on:chat-reply-requested.window="
+                    atBottom = true;
+
+                    const container = $refs.messages;
+                    const behavior = container.style.scrollBehavior;
+
+                    container.style.scrollBehavior = 'auto';
+                    container.scrollTop = container.scrollHeight;
+                    container.style.scrollBehavior = behavior;
                 "
             >
+                <div
+                    class="tk-assistant__messages"
+                    x-ref="messages"
+                >
                 @forelse ($messages as $index => $message)
                     <div
                         class="tk-assistant__row tk-assistant__row--{{ $message['role'] }}"
@@ -455,6 +509,20 @@
                         <div class="tk-assistant__bubble tk-assistant__bubble--stream" wire:stream="chat-stream"></div>
                     </div>
                 </div>
+                </div>
+
+                <button
+                    type="button"
+                    class="tk-assistant__scroll-bottom"
+                    x-show="! atBottom"
+                    x-cloak
+                    title="{{ __('filament-chat-assistant::chat-assistant.scroll_to_bottom') }}"
+                    aria-label="{{ __('filament-chat-assistant::chat-assistant.scroll_to_bottom') }}"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+                    </svg>
+                </button>
             </div>
 
             <form class="tk-assistant__composer" wire:submit="sendMessage">
@@ -829,14 +897,61 @@
             background: rgba(251, 191, 36, .12);
         }
 
+        .tk-assistant__messages-wrap {
+            position: relative;
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            min-height: 0;
+        }
+
         .tk-assistant__messages {
             display: flex;
             flex: 1;
             flex-direction: column;
             gap: .625rem;
+            min-height: 0;
             overflow-y: auto;
             padding: .875rem 1rem;
             scroll-behavior: smooth;
+        }
+
+        .tk-assistant__scroll-bottom {
+            position: absolute;
+            right: .75rem;
+            bottom: .75rem;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.9rem;
+            height: 1.9rem;
+            border: 1px solid rgba(127, 127, 127, .25);
+            border-radius: 9999px;
+            background: #fff;
+            color: #18181b;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, .18);
+            cursor: pointer;
+            transition: opacity .15s ease, transform .15s ease;
+        }
+
+        .dark .tk-assistant__scroll-bottom {
+            border-color: rgba(255, 255, 255, .14);
+            background: #27272a;
+            color: #f4f4f5;
+        }
+
+        .tk-assistant__scroll-bottom:hover {
+            transform: translateY(-1px);
+        }
+
+        .tk-assistant__scroll-bottom svg {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        .tk-assistant__scroll-bottom[x-cloak] {
+            display: none !important;
         }
 
         .tk-assistant__row {

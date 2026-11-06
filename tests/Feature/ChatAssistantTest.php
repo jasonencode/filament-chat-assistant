@@ -59,6 +59,38 @@ class ChatAssistantTest extends TestCase
             ->assertSee('tk-assistant__typing', false);
     }
 
+    public function test_it_renders_a_scroll_to_bottom_button(): void
+    {
+        Livewire::test(ChatAssistant::class)
+            ->call('toggle')
+            ->assertSee('class="tk-assistant__scroll-bottom"', false)
+            ->assertSee('滚动到底部');
+    }
+
+    public function test_scroll_to_bottom_button_sits_outside_the_scrolling_messages_area(): void
+    {
+        $html = Livewire::test(ChatAssistant::class)->call('toggle')->html();
+
+        $previous = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument();
+        $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        $xpath = new \DOMXPath($dom);
+        $query = "//*[contains(concat(' ', normalize-space(@class), ' '), ' %s ')]";
+
+        $button = $xpath->query(sprintf($query, 'tk-assistant__scroll-bottom'))->item(0);
+        $messages = $xpath->query(sprintf($query, 'tk-assistant__messages'))->item(0);
+
+        $this->assertNotNull($button);
+        $this->assertNotNull($messages);
+
+        // 按钮必须和消息滚动区同级（锚定在消息区右下角），不能放进滚动容器里
+        $this->assertNotSame($messages, $button->parentNode);
+        $this->assertSame($messages->parentNode, $button->parentNode);
+    }
+
     public function test_it_renders_single_agent_name_and_fallback_avatar(): void
     {
         Livewire::test(ChatAssistant::class)

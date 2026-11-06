@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-06
+
+### Added
+
+- Floating "scroll to bottom" button in the messages viewport; it is anchored to the messages area and moves up as the composer grows
+- New replies and streaming chunks follow the bottom only when the user is already at the bottom
+
+### Fixed
+
+- Assistant dialog flickering / remounting when navigating between pages with Filament SPA; the component is now kept with `@persist`
+- Message list now restores its scroll position after `wire:navigate` page switches
+
 ## [2.0.0] - 2026-11-05
 
 ### Breaking Changes

@@ -20,6 +20,7 @@ An AI chat assistant dialog plugin for Filament panels. The package owns the UI,
 - Multiple agents switchable from the header, including per-panel agent sets
 - Conversations isolated by "authenticated user + tenant + agent config key"
 - Message actions: copy, edit (loads a user message back into the input), retract (with confirmation), regenerate (last reply only)
+- A floating "scroll to bottom" button appears when the message list is scrolled up; new messages follow the bottom only when you are already there
 - Message timestamps: `H:i` for today, `m-d H:i` for this year, `Y-m-d H:i` otherwise (Filament timezone)
 - Composer with an in-field clear button, Enter to send / Shift + Enter for a new line, and IME-safe handling
 - Status indicator: green when idle, pulsing amber while generating, red after a failed reply
@@ -243,6 +244,8 @@ Edit, retract and regenerate are ignored while a reply is in progress (`replying
 
 - Drag the top, left or top-left edge to resize; `localStorage` stores `tk-assistant-width`, `tk-assistant-height` and `tk-assistant-maximized`
 - At 640px wide or less the dialog goes fullscreen and resizing is disabled
+- When the message list is scrolled up, a floating "scroll to bottom" button appears in the bottom-right corner of the messages viewport
+- With SPA enabled on the panel (`->spa()`), the assistant is kept across `wire:navigate` via `@persist`, so switching pages neither remounts nor flickers, and the message list restores its scroll position
 
 ## Data and isolation
 

@@ -20,6 +20,7 @@
 - 多 Agent，标题栏下拉切换；支持按面板配置不同 Agent
 - 会话按「登录用户 + 租户 + Agent 配置键」隔离，切换租户 / Agent 不串上下文
 - 消息操作：复制、编辑（用户消息回填到输入框）、撤回（二次确认）、重新生成（最后一条回复）
+- 消息区向上滚动时显示悬浮的「滚动到底部」按钮，新消息到达时自动跟随到底部
 - 消息时间：今天显示 `H:i`，今年显示 `m-d H:i`，更早显示 `Y-m-d H:i`（Filament 时区）
 - 输入区：清空按钮（在输入框内部）、Enter 发送 / Shift+Enter 换行、输入法组合输入保护
 - 状态指示器：就绪为绿色、生成中为琥珀色呼吸、上次失败为红色
@@ -243,7 +244,8 @@ class OrderSearch implements ChatAssistantAgent, HasTools
 
 - 拖拽上边 / 左边 / 左上角调整宽高；`localStorage` 保存 `tk-assistant-width`、`tk-assistant-height`、`tk-assistant-maximized`
 - 屏幕宽度 ≤ 640px 时自动铺满，拖拽调整禁用
-- 面板开启 SPA（`->spa()`）时，助手通过 `@persist` 跨 `wire:navigate` 保留，切换页面不会重建组件或闪动
+- 消息列表向上滚动时，右下角出现悬浮的「滚动到底部」按钮
+- 面板开启 SPA（`->spa()`）时，助手通过 `@persist` 跨 `wire:navigate` 保留，切换页面不会重建组件或闪动，消息列表也会恢复原来的滚动位置
 
 ## 数据与隔离
 

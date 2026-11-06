@@ -18,6 +18,7 @@ return [
 
     'send' => 'Send',
     'clear' => 'Clear',
+    'scroll_to_bottom' => 'Scroll to bottom',
     'placeholder' => 'Type a message. Enter to send, Shift + Enter for a new line.',
     'message_aria' => 'Message',
 
