@@ -10,4 +10,9 @@ class TestablePlugin extends FilamentChatAssistantPlugin
     {
         return $this->shouldRender();
     }
+
+    public function html(): string
+    {
+        return $this->renderAssistant();
+    }
 }

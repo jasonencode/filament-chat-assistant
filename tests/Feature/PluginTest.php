@@ -77,4 +77,18 @@ class PluginTest extends TestCase
 
         $this->assertTrue((new TestablePlugin)->renders());
     }
+
+    public function test_it_persists_the_assistant_dom_across_spa_navigations(): void
+    {
+        $this->actingAsTestUser();
+
+        config(['chat-assistant.agents' => ['test' => TestAgent::class]]);
+
+        $html = (new TestablePlugin)->html();
+
+        $this->assertStringContainsString(
+            'x-persist="filament-chat-assistant.panel-admin.tenant-platform"',
+            $html,
+        );
+    }
 }

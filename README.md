@@ -243,6 +243,7 @@ class OrderSearch implements ChatAssistantAgent, HasTools
 
 - 拖拽上边 / 左边 / 左上角调整宽高；`localStorage` 保存 `tk-assistant-width`、`tk-assistant-height`、`tk-assistant-maximized`
 - 屏幕宽度 ≤ 640px 时自动铺满，拖拽调整禁用
+- 面板开启 SPA（`->spa()`）时，助手通过 `@persist` 跨 `wire:navigate` 保留，切换页面不会重建组件或闪动
 
 ## 数据与隔离
 
