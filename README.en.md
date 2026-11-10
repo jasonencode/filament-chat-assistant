@@ -284,6 +284,10 @@ Coverage includes:
 
 > Testbench development dependencies require PHP 8.3+.
 
+## Security
+
+Please do **not** open a public issue for security problems. Report them through GitHub's private vulnerability reporting or by email; see [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT. See [LICENSE.md](LICENSE.md).

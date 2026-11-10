@@ -284,6 +284,10 @@ vendor/bin/phpunit
 
 > Testbench 开发依赖要求 PHP 8.3+。
 
+## 安全
+
+如果发现安全问题，请**不要**开公开 issue，改用 GitHub 私密漏洞报告或邮件联系，详见 [SECURITY.md](SECURITY.md)。
+
 ## 许可证
 
 MIT，详见 [LICENSE.md](LICENSE.md)。

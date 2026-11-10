@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `SECURITY.md` with a private vulnerability reporting process
+- Dependabot configuration for GitHub Actions and Composer, with a 7-day release cooldown
+
+### Changed
+
+- CI workflow pins `actions/checkout` and `shivammathur/setup-php` to commit SHAs and runs with read-only `contents` permissions
+
 ## [2.1.0] - 2026-11-06
 
 ### Added
