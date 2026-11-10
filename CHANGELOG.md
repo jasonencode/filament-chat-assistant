@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-10
+
 ### Added
 
 - `SECURITY.md` with a private vulnerability reporting process
@@ -15,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - CI workflow pins `actions/checkout` and `shivammathur/setup-php` to commit SHAs and runs with read-only `contents` permissions
+- `actions/checkout` upgraded from 4.4.0 to 7.0.1, still pinned to a commit SHA
 - Test matrix now runs on PHP 8.4 and 8.5, because PHPUnit 13 requires PHP 8.4+
 
 ### Fixed
