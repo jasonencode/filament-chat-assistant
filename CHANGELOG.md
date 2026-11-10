@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - CI workflow pins `actions/checkout` and `shivammathur/setup-php` to commit SHAs and runs with read-only `contents` permissions
+- Test matrix now runs on PHP 8.4 and 8.5, because PHPUnit 13 requires PHP 8.4+
+
+### Fixed
+
+- `composer.json` branch alias pointed at `1.x-dev`; it is now `2.x-dev`
 
 ## [2.1.0] - 2026-11-06
 
