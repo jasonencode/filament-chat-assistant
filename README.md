@@ -282,7 +282,7 @@ vendor/bin/phpunit
 - 会话落库：`RememberedConversation` 的读取与删除
 - `ChatAssistantService`：用户 / 租户注入、会话续接、异常兜底、异常详情开关
 
-> Testbench 开发依赖要求 PHP 8.3+。
+> 测试使用 PHPUnit 13，运行测试套件需要 PHP 8.4+；包本身仍支持 PHP 8.2+。
 
 ## 安全
 

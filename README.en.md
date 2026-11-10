@@ -282,7 +282,7 @@ Coverage includes:
 - Persistence: `RememberedConversation` reads and deletes
 - `ChatAssistantService`: user / tenant injection, conversation continuation, error fallback, debug detail toggle
 
-> Testbench development dependencies require PHP 8.3+.
+> Tests use PHPUnit 13, so running the suite requires PHP 8.4+; the package itself still supports PHP 8.2+.
 
 ## Security
 
