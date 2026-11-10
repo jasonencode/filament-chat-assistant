@@ -1,0 +1,24 @@
+version: 2
+
+updates:
+  # Keep the GitHub Actions used in .github/workflows pinned and current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+
+  # Runtime and development Composer dependencies.
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"
